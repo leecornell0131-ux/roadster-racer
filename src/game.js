@@ -6,6 +6,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100, makeBlackwell } from './models.js';
 import { upgradeRoadster, loadCar, instance, addSensorKit, CARS } from './realcars.js';
+import { createBoss } from './boss.js';
 
 // ---------- quality ----------
 const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -135,7 +136,7 @@ scene.add(sky);
   envScene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), skyMat));
   const pm = new THREE.PMREMGenerator(renderer);
   scene.environment = pm.fromScene(envScene, 0.02).texture;
-  // real sunset HDRI (CC0, Poly Haven "Venice Sunset"), stored as RGBE bytes in a grayscale PNG
+  // real city-at-sunset HDRI (CC0, Poly Haven "Highway Bridge Sunset"), stored as RGBE bytes in a grayscale PNG
   const img = new Image();
   img.onload = () => {
     try {
@@ -154,7 +155,7 @@ scene.add(sky);
       tex.dispose();
     } catch (err) { console.warn('HDRI skipped', err); }
   };
-  img.src = 'assets/sunset_rgbe_gray.png';
+  img.src = 'assets/city_sunset_rgbe_gray.png';
 }
 
 scene.add(new THREE.HemisphereLight('#9d7be0', '#2a1712', 0.7));
@@ -175,25 +176,29 @@ function canvasTex(w, h, draw, repeat) {
   if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; }
   return t;
 }
-const roadTex = canvasTex(512, 512, (g, w, h) => {
-  g.fillStyle = '#26222b'; g.fillRect(0, 0, w, h);
-  for (let i = 0; i < 9000; i++) { const v = 30 + Math.random() * 30; g.fillStyle = `rgb(${v},${v - 3},${v + 4})`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); }
-  g.fillStyle = '#e9e4f0';
-  g.fillRect(w * 0.025, 0, 6, h); g.fillRect(w * 0.975 - 6, 0, 6, h);
-  for (const u of [0.25, 0.75]) g.fillRect(w * u - 3, 0, 6, h * 0.5);
-  g.fillStyle = '#ffc83d'; g.fillRect(w * 0.5 - 9, 0, 6, h); g.fillRect(w * 0.5 + 3, 0, 6, h);
-}, true);
+// ---------- photo textures (CC0: Poly Haven, ambientCG) ----------
+const texLoader = new THREE.TextureLoader();
+function photo(url, { srgb = true, rep = [1, 1], onload } = {}) {
+  const t = texLoader.load('assets/tex/' + url, onload);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...rep);
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = 8;
+  return t;
+}
+// lane paint drawn over real asphalt: one canvas tile = 24 m x 24 m of road
+function drawRoad(g, w, h, asphalt) {
+  if (asphalt) { for (let x = 0; x < 4; x++) for (let y = 0; y < 4; y++) g.drawImage(asphalt, x * w / 4, y * h / 4, w / 4, h / 4); g.fillStyle = 'rgba(20,16,26,0.35)'; g.fillRect(0, 0, w, h); }
+  else { g.fillStyle = '#26222b'; g.fillRect(0, 0, w, h); }
+  const paint = (c, x, y0, ww, hh) => { g.fillStyle = c; g.globalAlpha = 0.88; g.fillRect(x, y0, ww, hh); g.globalAlpha = 1; };
+  paint('#e9e4f0', w * 0.025, 0, w * 0.012, h); paint('#e9e4f0', w * 0.963, 0, w * 0.012, h);
+  for (const u of [0.25, 0.75]) paint('#e9e4f0', w * u - w * 0.006, 0, w * 0.012, h * 0.5);
+  paint('#ffc83d', w * 0.5 - w * 0.018, 0, w * 0.012, h); paint('#ffc83d', w * 0.5 + w * 0.006, 0, w * 0.012, h);
+}
+const roadTex = canvasTex(1024, 1024, (g, w, h) => drawRoad(g, w, h), true);
+photo('asphalt_diff.jpg', { onload: (t) => { const c = roadTex.image; drawRoad(c.getContext('2d'), c.width, c.height, t.image); roadTex.needsUpdate = true; } });
 const hazardTex = canvasTex(128, 128, (g, w, h) => {
   g.fillStyle = '#ffc400'; g.fillRect(0, 0, w, h); g.fillStyle = '#141414';
   for (let i = -w; i < w * 2; i += 32) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 16, 0); g.lineTo(i + 16 - h, h); g.lineTo(i - h, h); g.fill(); }
 }, true);
-const windowTex = canvasTex(128, 256, (g, w, h) => {
-  g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
-  for (let y = 6; y < h - 6; y += 12) for (let x = 6; x < w - 6; x += 10) {
-    if (Math.random() < 0.38) { g.fillStyle = Math.random() < 0.75 ? '#ffd79a' : '#8ff3ff'; g.globalAlpha = 0.5 + Math.random() * 0.5; g.fillRect(x, y, 5, 7); }
-  }
-  g.globalAlpha = 1;
-});
 function textTex(text, color, opts = {}) {
   const w = opts.w || 512, h = opts.h || 160;
   return canvasTex(w, h, (g) => {
@@ -254,10 +259,10 @@ function crossWall(s, dL, dR, y0, y1) {
 
 // ---------- world building ----------
 const M = {
-  road: new THREE.MeshStandardMaterial({ map: roadTex, roughness: 0.42, metalness: 0.15, envMapIntensity: 0.9 }),
-  ground: new THREE.MeshStandardMaterial({ color: '#1c1418', roughness: 0.95 }),
-  walk: new THREE.MeshStandardMaterial({ color: '#3a3240', roughness: 0.8 }),
-  concrete: new THREE.MeshStandardMaterial({ color: '#8a7f86', roughness: 0.85, side: THREE.DoubleSide }),
+  road: new THREE.MeshStandardMaterial({ map: roadTex, normalMap: photo('asphalt_nor.jpg', { srgb: false, rep: [4, 4] }), normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: photo('asphalt_rough.jpg', { srgb: false, rep: [4, 4] }), roughness: 0.95, metalness: 0.05, envMapIntensity: 1.1 }),
+  ground: new THREE.MeshStandardMaterial({ map: photo('grass_diff.jpg', { rep: [24, 1] }), color: '#6b5a52', roughness: 0.95 }),
+  walk: new THREE.MeshStandardMaterial({ map: photo('walk_diff.jpg'), normalMap: photo('walk_nor.jpg', { srgb: false }), color: '#b8aeb4', roughness: 0.85 }),
+  concrete: new THREE.MeshStandardMaterial({ map: photo('concrete_diff.jpg', { rep: [0.25, 0.25] }), color: '#b0a8ac', roughness: 0.85, side: THREE.DoubleSide }),
   ramp: new THREE.MeshStandardMaterial({ map: hazardTex, roughness: 0.5, metalness: 0.3, side: THREE.DoubleSide }),
   water: new THREE.MeshStandardMaterial({ color: '#0f3a52', roughness: 0.06, metalness: 0.4, envMapIntensity: 1.4 }),
   dirt: new THREE.MeshStandardMaterial({ color: '#3a2a22', roughness: 1, side: THREE.DoubleSide }),
@@ -273,13 +278,13 @@ function buildWorld() {
   // ground split by the river
   for (const [a, b] of [[-400, BRIDGE0], [BRIDGE1, 3500]]) {
     for (const [l, r] of [[-500, -15.5], [15.5, 500]]) {
-      const g = new THREE.Mesh(ribbon(a, b, l, r, 20, () => -0.05), M.ground); g.receiveShadow = true; scene.add(g);
+      const g = new THREE.Mesh(ribbon(a, b, l, r, 20, () => -0.05, 20), M.ground); g.receiveShadow = true; scene.add(g);
     }
   }
   // sidewalks
   for (const [a, b] of [[-120, BRIDGE0], [BRIDGE1, FINISH_S + 260]]) {
     for (const [l, r] of [[-15.5, -ROAD_HALF], [ROAD_HALF, 15.5]]) {
-      const w = new THREE.Mesh(ribbon(a, b, l, r, 4, () => 0.12), M.walk); w.receiveShadow = true; scene.add(w);
+      const w = new THREE.Mesh(ribbon(a, b, l, r, 4, () => 0.12, 3.5), M.walk); w.receiveShadow = true; scene.add(w);
     }
   }
   // river + banks
@@ -338,6 +343,43 @@ const neonMats = NEON.map(([t, c]) => {
   const m = new THREE.MeshBasicMaterial({ map: textTex(t, c, { size: t.length > 9 ? 56 : 84 }), transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
   m.color.setScalar(2.2); return m;
 });
+// tile = metres covered by one texture repeat, grid = window cells per tile (for lighting random windows)
+const FACADES = [
+  { name: '006', tile: [28, 28], grid: [12, 8], mask: 'dark', lit: 0.3, metal: 0.55, rough: 0.18, hue: 0.55 },
+  { name: '009', tile: [30, 30], emi: true, metal: 0.5, rough: 0.2, hue: 0.6 },
+  { name: '018A', tile: [24, 24], grid: [8, 8], mask: 'blue', lit: 0, metal: 0.1, rough: 0.8, hue: 0.03 },
+  { name: '020A', tile: [26, 30], grid: [8, 9], mask: 'blue', lit: 0, metal: 0.1, rough: 0.75, hue: 0.08 },
+];
+function facadeMat(f) {
+  const mat = new THREE.MeshStandardMaterial({
+    map: photo(`fac${f.name}_col.jpg`), normalMap: photo(`fac${f.name}_nor.jpg`, { srgb: false }),
+    metalness: f.metal, roughness: f.rough, envMapIntensity: 1.2,
+    emissive: '#ffffff', emissiveIntensity: 1, emissiveMap: f.emi ? photo(`fac${f.name}_emi.jpg`) : null,
+  });
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.tile = { value: new THREE.Vector2(...f.tile) };
+    sh.uniforms.grid = { value: new THREE.Vector2(...(f.grid || [1, 1])) };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform vec2 tile; varying float vRoof; varying vec2 vSeed;')
+      .replace('#include <uv_vertex>', `#include <uv_vertex>
+        float lx = length(instanceMatrix[0].xyz), ly = length(instanceMatrix[1].xyz), lz = length(instanceMatrix[2].xyz);
+        vec2 fsc = abs(normal.x) > 0.5 ? vec2(lz, ly) : abs(normal.z) > 0.5 ? vec2(lx, ly) : vec2(lx, lz);
+        vec2 fuv = uv * fsc / tile; vRoof = abs(normal.y);
+        vSeed = instanceMatrix[3].xz;
+        vMapUv = fuv; vNormalMapUv = fuv;${f.emi ? ' vEmissiveMapUv = fuv;' : ''}`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec2 grid; varying float vRoof; varying vec2 vSeed;\nfloat fhash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }')
+      .replace('#include <map_fragment>', '#include <map_fragment>\n diffuseColor.rgb *= mix(1.0, 0.18, vRoof);')
+      .replace('#include <emissivemap_fragment>', f.emi ? '#include <emissivemap_fragment>\n totalEmissiveRadiance *= 0.9 * (1.0 - vRoof);' : `
+        vec3 fc = texture2D(map, vMapUv).rgb;
+        float win = ${f.mask === 'dark' ? '1.0 - smoothstep(0.28, 0.42, dot(fc, vec3(0.33)))' : 'smoothstep(0.02, 0.09, fc.b - fc.r) * (1.0 - smoothstep(0.35, 0.5, dot(fc, vec3(0.33))))'};
+        vec2 cell = floor(vMapUv * grid);
+        float hh = fhash(cell + floor(vSeed));
+        float lit = step(${(1 - f.lit).toFixed(2)}, hh) * (1.0 - vRoof);
+        totalEmissiveRadiance = mix(vec3(1.0, 0.72, 0.42), vec3(0.62, 0.9, 1.0), step(0.85, fract(hh * 7.3))) * win * lit * (0.35 + 0.4 * fract(hh * 13.1));`);
+  };
+  return mat;
+}
 function buildBuildings() {
   const items = [];
   for (let s = -60; s < FINISH_S + 150; s += Q.bStep) {
@@ -354,17 +396,24 @@ function buildBuildings() {
     }
   }
   const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, 0.5, 0);
-  const mat = new THREE.MeshStandardMaterial({ color: '#2a1f33', roughness: 0.7, metalness: 0.2, emissiveMap: windowTex, emissive: '#ffffff', emissiveIntensity: 1.25 });
-  const inst = new THREE.InstancedMesh(geo, mat, items.length);
+  // photo facades; each building picks one by district
+  const kinds = FACADES.map(() => []);
+  for (const b of items) {
+    const k = b.downtown ? (Math.random() < 0.55 ? 0 : 1) : b.sixth ? (Math.random() < 0.7 ? 2 : 3) : (Math.random() < 0.6 ? 3 : 2);
+    kinds[b.face ? k : (b.h > 40 ? 1 : k)].push(b);
+  }
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color();
-  const tints = ['#3b2a4a', '#2c2338', '#43304a', '#2a2a3c', '#4a3036'];
-  items.forEach((b, i) => {
-    world(b.s, b.d, 0, p); q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, frame(b.s).yaw);
-    sc.set(b.dp, b.h, b.w); m4.compose(p, q, sc); inst.setMatrixAt(i, m4);
-    inst.setColorAt(i, col.set(tints[i % tints.length]));
+  kinds.forEach((list, k) => {
+    if (!list.length) return;
+    const inst = new THREE.InstancedMesh(geo, facadeMat(FACADES[k]), list.length);
+    list.forEach((b, i) => {
+      world(b.s, b.d, 0, p); q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, frame(b.s).yaw);
+      sc.set(b.dp, b.h, b.w); m4.compose(p, q, sc); inst.setMatrixAt(i, m4);
+      inst.setColorAt(i, col.setHSL(FACADES[k].hue + (Math.random() - 0.5) * 0.04, 0.1, 0.42 + Math.random() * 0.16));
+    });
+    inst.receiveShadow = true;
+    scene.add(inst);
   });
-  inst.receiveShadow = true;
-  scene.add(inst);
   // neon signs on the road-facing side
   const signGeo = new THREE.PlaneGeometry(7, 2.2);
   for (const b of items) {
@@ -483,13 +532,15 @@ const car = makeRoadster(); scene.add(car);
 const magnetRing = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 1.6, 2.2), transparent: true, opacity: 0.22, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
 magnetRing.rotation.x = -Math.PI / 2; scene.add(magnetRing);
 const P = {};
+let boss = null;
 let traffic = [], pickups = [], state = 'loading', raceT = 0, countdown = 0, penalty = 0;
 const stats = { perfect: 0, coins: 0, xpGain: 0, dogeGain: 0, jumpsOver: 0 };
 const radioQueue = [];
 const radioFlags = new Set();
 
 function resetRace() {
-  Object.assign(P, { s: 0, d: 3, y: 0, v: 0, vy: 0, grounded: true, charges: maxCharges(), recharge: 0, fuel: AIR_FUEL, slope: 0, air: 0, boostT: 0, boostG: 30, crashT: 0, shake: 0, steerVis: 0, roll: 0, rollTo: 0, rollDir: 1, finished: false });
+  Object.assign(P, { s: 0, d: 3, y: 0, v: 0, vy: 0, grounded: true, charges: maxCharges(), recharge: 0, fuel: AIR_FUEL, slope: 0, air: 0, boostT: 0, boostG: 30, crashT: 0, shake: 0, steerVis: 0, roll: 0, rollTo: 0, rollDir: 1, finished: false, coil: 0 });
+  boss?.reset();
   raceT = 0; penalty = 0;
   Object.assign(stats, { perfect: 0, coins: 0, xpGain: 0, dogeGain: 0, jumpsOver: 0 });
   radioFlags.clear(); radioQueue.length = 0;
@@ -565,18 +616,19 @@ function spawnPickups() {
 }
 
 // ---------- input ----------
-const input = { left: false, right: false, jump: false, brake: false, boost: false, jumpEdge: false };
-const KEYMAP = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'jump', ArrowUp: 'jump', KeyW: 'jump', ArrowDown: 'brake', KeyS: 'brake', ShiftLeft: 'boost', ShiftRight: 'boost', KeyB: 'boost' };
+const input = { left: false, right: false, jump: false, brake: false, boost: false, fire: false, jumpEdge: false, fireEdge: false };
+const KEYMAP = { KeyF: 'fire', KeyE: 'fire', Enter: 'fire', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'jump', ArrowUp: 'jump', KeyW: 'jump', ArrowDown: 'brake', KeyS: 'brake', ShiftLeft: 'boost', ShiftRight: 'boost', KeyB: 'boost' };
 addEventListener('keydown', (e) => {
   const k = KEYMAP[e.code]; if (!k) return;
   e.preventDefault();
   if (k === 'jump' && !input.jump) input.jumpEdge = true;
+  if (k === 'fire' && !input.fire) input.fireEdge = true;
   input[k] = true;
 });
 addEventListener('keyup', (e) => { const k = KEYMAP[e.code]; if (k) input[k] = false; });
 for (const btn of document.querySelectorAll('[data-key]')) {
   const k = btn.dataset.key;
-  const on = (e) => { e.preventDefault(); if (k === 'jump' && !input.jump) input.jumpEdge = true; input[k] = true; btn.classList.add('down'); };
+  const on = (e) => { e.preventDefault(); if (k === 'jump' && !input.jump) input.jumpEdge = true; if (k === 'fire' && !input.fire) input.fireEdge = true; input[k] = true; btn.classList.add('down'); };
   const off = (e) => { e.preventDefault(); input[k] = false; btn.classList.remove('down'); };
   btn.addEventListener('pointerdown', on); btn.addEventListener('pointerup', off);
   btn.addEventListener('pointercancel', off); btn.addEventListener('pointerleave', off);
@@ -678,6 +730,12 @@ function updateHUD() {
   hud.boost.style.width = `${P.boostG}%`;
   hud.fuel.style.width = `${100 * P.fuel / AIR_FUEL}%`;
   $('boostBtn').classList.toggle('ready', P.boostG >= 35);
+  if (boss?.B.active) {
+    $('coilFill').style.width = `${P.coil}%`;
+    const ready = P.coil >= 100;
+    $('coilMeter').classList.toggle('full', ready); $('fireBtn').classList.toggle('ready', ready);
+    $('coilTxt').textContent = ready ? (IS_MOBILE ? '⚡ 코일 발사 준비!' : '⚡ F 키로 코일 발사!') : '⚡ 테슬라 코일 충전 중';
+  }
   renderPips();
 }
 const fmtTime = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}`;
@@ -694,6 +752,7 @@ const RADIO_SCRIPT = [
 ];
 function step(dt) {
   raceT += dt;
+  if (boss) { boss.update(dt); if (input.fireEdge) { input.fireEdge = false; if (!boss.fireCoil() && boss.B.active) floatText('코일 충전 중…'); } }
   const fr0 = frame(P.s);
   // speed
   const boosting = P.boostT > 0;
@@ -852,16 +911,17 @@ function splash() {
 function collect(p) {
   p.taken = true; scene.remove(p.mesh);
   switch (p.type) {
-    case 'coin': save.doge += 5; writeSaveSoon(); stats.dogeGain += 5; stats.coins++; P.boostG = Math.min(100, P.boostG + 3); blip(988, 1480, 0.09, 'square', 0.06); break;
+    case 'coin': if (boss?.B.active) P.coil = Math.min(100, P.coil + 6); save.doge += 5; writeSaveSoon(); stats.dogeGain += 5; stats.coins++; P.boostG = Math.min(100, P.boostG + 3); blip(988, 1480, 0.09, 'square', 0.06); break;
     case 'air': P.charges = Math.min(maxCharges(), P.charges + 1); P.fuel = AIR_FUEL; floatText('압축공기 +1'); blip(300, 900, 0.18, 'sine', 0.12); break;
-    default: gainXP(PICK[p.type].xp, PICK[p.type].label); blip(660, 1320, 0.16, 'triangle', 0.14);
+    default: if (boss?.B.active) P.coil = Math.min(100, P.coil + (p.type === 'gpu' ? 22 : 40)); gainXP(PICK[p.type].xp, PICK[p.type].label); blip(660, 1320, 0.16, 'triangle', 0.14);
       if (p.type === 'legend') { toast('전설의 블랙웰 칩!', '+200 EXP', '#b07dff'); radio('그거 젠슨이 찾고 있던 건데… 우리가 가져가자.'); }
   }
 }
 function finish() {
   P.finished = true; state = 'finish';
   const t = raceT + penalty;
-  const stars = 1 + (t <= 62 ? 1 : 0) + (stats.perfect >= 3 ? 1 : 0);
+  const bossWin = !!boss?.B.defeated;
+  const stars = 1 + (bossWin ? 1 : 0) + (t <= 62 || stats.perfect >= 3 ? 1 : 0);
   const best = save.best && save.best < t ? save.best : t; save.best = best;
   writeSave();
   radio('착지 완벽. 다음 목적지는 LA야. 준비해둬.');
@@ -873,6 +933,7 @@ function finish() {
     $('rCoins').textContent = `+${stats.dogeGain}`;
     $('rXp').textContent = `+${stats.xpGain}`;
     $('rLv').textContent = `LV ${save.level}`;
+    $('rBoss').textContent = bossWin ? '격추' : '놓침';
     $('results').hidden = false;
   }, 900);
 }
@@ -919,8 +980,28 @@ function syncPickups(time) {
     for (const f of p.mesh.userData.fans || []) f.rotation.z = time * 14;
   }
 }
+// loading-screen staging: the Roadster mid barrel-roll over 6th Street, the boss looming behind
+const POSTER = { s: 820, d: 2.2, y: 3.6 };
+function posterStage(time) {
+  world(POSTER.s, POSTER.d, POSTER.y + Math.sin(time * 1.3) * 0.15, car.position);
+  car.rotation.order = 'YXZ';
+  car.rotation.set(-0.16, frame(POSTER.s).yaw + 0.25, 0.42 + Math.sin(time * 0.9) * 0.04);
+  car.userData.jet.opacity = 0.45 + Math.sin(time * 25) * 0.08;
+  const blob = car.getObjectByName('blob'); if (blob) blob.visible = false;
+  magnetRing.visible = false;
+  boss?.posterPose(POSTER.s + 30, -5, 10.5, time);
+}
 function updateCamera(dt, time) {
   const fr = frame(P.s);
+  if (state === 'poster' && boss) {
+    orbitT += dt * 0.05;
+    const sway = Math.sin(orbitT) * 1.2;
+    world(POSTER.s - 10, POSTER.d - 3.4 + sway, 1.3, camPos);
+    camera.position.copy(camPos);
+    world(POSTER.s + 10, POSTER.d - 2.5, 5.2, camLook); camera.lookAt(camLook);
+    camera.fov = 44; camera.updateProjectionMatrix();
+    return;
+  }
   if (state === 'poster' || state === 'loading') {
     orbitT += dt * 0.18;
     const a = orbitT + 0.6;
@@ -1004,7 +1085,8 @@ function loop(now) {
   if (state === 'race' && !hud.count.hidden && raceT > 0.8) hud.count.hidden = true;
   if (state === 'race') { tickAcc += dt; while (tickAcc >= TICK) { step(TICK); tickAcc -= TICK; } }
   else if (state === 'finish') { P.v = Math.max(0, P.v - 30 * dt); P.s += P.v * dt; P.thrusting = false; }
-  if (state !== 'loading') { placeCar(); syncTraffic(time); syncPickups(time); }
+  if (state !== 'loading') { placeCar(); syncTraffic(time); syncPickups(time); boss?.sync(time); }
+  if (state === 'poster') posterStage(time);
   updatePuffs(dt); updateRadio(dt);
   if (toastT > 0) toastT -= dt;
   if (!window.__game?.frozen) updateCamera(dt, time);
@@ -1025,7 +1107,9 @@ const carReady = Promise.race([
 async function boot() {
   buildWorld();
   await carReady; await trafficReady;
-  $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · HDRI: Poly Haven (CC0)';
+  if (trafficProtos.waymo) boss = createBoss({ scene, P, LANES, world, frame, carGround, puff, toast, radio, floatText, blip, gainXP, $, camera, car,
+    addDoge: (n) => { save.doge += n; stats.dogeGain += n; writeSaveSoon(); } }, 'waymo', trafficProtos.waymo);
+  $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · Textures & HDRI: Poly Haven, ambientCG (CC0)';
   resetRace(); placeCar(); syncTraffic(0); syncPickups(0);
   state = 'poster';
   $('startBtn').disabled = false; $('startBtn').textContent = '출발';
@@ -1034,5 +1118,5 @@ async function boot() {
 }
 document.fonts?.ready.then(() => setTimeout(boot, 30)) ?? setTimeout(boot, 30);
 requestAnimationFrame(loop);
-window.__game = { get pickups() { return pickups; }, get traffic() { return traffic; }, P, get state() { return state; }, input, scene, camera, car, THREE, realcars: { loadCar, instance, CARS }, models: { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100 },
+window.__game = { get boss() { return boss; }, get pickups() { return pickups; }, get traffic() { return traffic; }, P, get state() { return state; }, input, scene, camera, car, THREE, realcars: { loadCar, instance, CARS }, models: { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100 },
   freeze(on) { this.frozen = on; } };

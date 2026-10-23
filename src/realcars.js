@@ -274,7 +274,7 @@ export function addSensorKit(car) {
   }
   const pivot = new THREE.Group(); pivot.name = 'pivot'; pivot.position.y = 0.29; kit.add(pivot);
   const cone = new THREE.ConeGeometry(2.4, 15, 20, 1, true); cone.translate(0, -7.5, 0); cone.rotateX(-Math.PI / 2);
-  const laser = new THREE.Mesh(cone, new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 0.1, 0.12), transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+  const laser = new THREE.Mesh(cone, new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 0.1, 0.12), transparent: true, opacity: 0.035, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
   laser.rotation.x = 0.1; pivot.add(laser);
   kit.traverse((o) => { if (o.isMesh && o !== laser) o.castShadow = true; });
   car.add(kit);
