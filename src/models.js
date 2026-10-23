@@ -187,9 +187,6 @@ export function makeRoadster(color = '#b5091f') {
   const tl = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 0.04), tail); tl.position.set(0, 0.72, 2.2); car.add(tl);
   for (const s of [-1, 1]) { const t = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.05, 0.05), tail); t.position.set(s * 0.82, 0.71, 2.08); t.rotation.y = s * 0.55; car.add(t); }
   car.userData.tail = tail;
-  // T badge
-  const badge = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.12), new THREE.MeshBasicMaterial({ map: labelTex([['T', '900 110px Arial', '#e8e8ee', 0.55]], { w: 128, h: 128 }), transparent: true }));
-  badge.position.set(0, 0.6, -2.2); badge.rotation.set(-0.9, Math.PI, 0); car.add(badge);
   // SpaceX cold-gas thrusters (hidden behind the plate, glow when firing)
   const jet = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 2.4, 3.2), toneMapped: false, transparent: true, opacity: 0 });
   for (const [x, z] of [[-0.6, -1.85], [0.6, -1.85], [-0.6, 1.85], [0.6, 1.85]]) {

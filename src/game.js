@@ -23,6 +23,12 @@ const JUMP_V = 13;
 const RECHARGE = 8;                       // seconds per jump charge
 const AIR_FUEL = 1.3;                     // seconds of landing thrust
 
+// ---------- cast ----------
+// Display names live here so parody names can replace real ones in one place.
+export const CAST = {
+  hero: { name: '일론', ava: 'EM' },
+};
+
 // ---------- save ----------
 const SAVE_KEY = 'roadster-racer-save-v1';
 const save = loadSave();
@@ -466,7 +472,7 @@ const radioQueue = [];
 const radioFlags = new Set();
 
 function resetRace() {
-  Object.assign(P, { s: 0, d: 3, y: 0, v: 0, vy: 0, grounded: true, charges: maxCharges(), recharge: 0, fuel: AIR_FUEL, slope: 0, air: 0, boostT: 0, boostG: 30, crashT: 0, shake: 0, steerVis: 0, finished: false });
+  Object.assign(P, { s: 0, d: 3, y: 0, v: 0, vy: 0, grounded: true, charges: maxCharges(), recharge: 0, fuel: AIR_FUEL, slope: 0, air: 0, boostT: 0, boostG: 30, crashT: 0, shake: 0, steerVis: 0, roll: 0, rollTo: 0, rollDir: 1, finished: false });
   raceT = 0; penalty = 0;
   Object.assign(stats, { perfect: 0, coins: 0, xpGain: 0, dogeGain: 0, jumpsOver: 0 });
   radioFlags.clear(); radioQueue.length = 0;
@@ -585,7 +591,7 @@ function toast(big, small = '', color = '#38f5ff') {
   toastT = 1.6;
 }
 let radioT = 0;
-function radio(text, who = '일론', ava = 'EM') {
+function radio(text, who = CAST.hero.name, ava = CAST.hero.ava) {
   radioQueue.push({ text, who, ava });
 }
 function updateRadio(dt) {
@@ -671,6 +677,8 @@ function step(dt) {
   if (input.jumpEdge && P.grounded) {
     if (P.charges > 0) {
       P.charges--; P.vy = JUMP_V + P.slope * P.v; P.grounded = false; P.air = 0;
+      // signature move from the Roadster demo: a full sideways twist in the air
+      P.rollDir = steer !== 0 ? steer : -P.rollDir; P.rollTo = P.roll + Math.PI * 2 * P.rollDir;
       blip(160, 520, 0.25, 'triangle', 0.15);
       const base = world(P.s, P.d, P.y);
       for (let i = 0; i < 14; i++) puff(base, new THREE.Vector3((Math.random() - 0.5) * 12, -1 + Math.random() * 2, (Math.random() - 0.5) * 12), '#e8f6ff', 1.2, 0.7);
@@ -691,6 +699,13 @@ function step(dt) {
       const r = rampAt(P.s, P.d); P.slope = r ? r.h / r.len : 0; P.y = g;
     }
     P.fuel = Math.min(AIR_FUEL, P.fuel + dt * 1.5);
+  }
+  if (P.roll !== P.rollTo) {
+    const left = P.rollTo - P.roll, sp = (P.grounded ? 20 : 8.5) * dt;
+    if (Math.abs(left) <= sp) {
+      P.roll = P.rollTo = 0;
+      if (!P.grounded) { gainXP(10, '배럴롤 +10 EXP'); P.boostG = Math.min(100, P.boostG + 10); }
+    } else P.roll += Math.sign(left) * sp;
   }
   if (!P.grounded) {
     P.air += dt;
@@ -810,7 +825,10 @@ function placeCar() {
   car.rotation.order = 'YXZ';
   car.rotation.y = fr.yaw - P.steerVis * 0.12;
   car.rotation.x = -pitch * -1;
-  car.rotation.z = -P.steerVis * 0.05;
+  car.rotation.z = -P.steerVis * 0.05 + P.roll;
+  // roll around the body's centre (0.55 m up), not the tyre contact point
+  const sr = Math.sin(P.roll), cr = 1 - Math.cos(P.roll);
+  car.position.addScaledVector(fr.r, 0.55 * sr).y += 0.55 * cr;
   for (const w of car.userData.wheels) w.children.forEach((c) => (c.rotation.x -= P.v * 0.016));
   const blob = car.getObjectByName('blob'); if (blob) { blob.visible = groundAt(P.s, P.d) > -100; blob.position.y = 0.03 - P.y + groundAt(P.s, P.d); blob.material.opacity = 0.9 / (1 + Math.max(0, P.y - groundAt(P.s, P.d)) * 0.35); }
   car.userData.jet.opacity = P.thrusting ? 0.9 : Math.max(0, car.userData.jet.opacity - 0.08);
@@ -882,7 +900,8 @@ function startRace() {
 $('startBtn').addEventListener('click', startRace);
 $('againBtn').addEventListener('click', startRace);
 
-let last = performance.now();
+let last = performance.now(), tickAcc = 0;
+const TICK = 1 / 120; // fixed physics tick, deterministic for future replays and ghosts
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const time = now / 1000;
@@ -894,7 +913,7 @@ function loop(now) {
     else if (Math.ceil(countdown + dt) !== n) blip(440, 440, 0.15, 'square', 0.08);
   }
   if (state === 'race' && !hud.count.hidden && raceT > 0.8) hud.count.hidden = true;
-  if (state === 'race') { const sub = 2; for (let i = 0; i < sub; i++) step(dt / sub); }
+  if (state === 'race') { tickAcc += dt; while (tickAcc >= TICK) { step(TICK); tickAcc -= TICK; } }
   else if (state === 'finish') { P.v = Math.max(0, P.v - 30 * dt); P.s += P.v * dt; P.thrusting = false; }
   if (state !== 'loading') { placeCar(); syncTraffic(time); syncPickups(time); }
   updatePuffs(dt); updateRadio(dt);
