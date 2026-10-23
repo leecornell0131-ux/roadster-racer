@@ -1,0 +1,23 @@
+{
+  "name": "roadster-racer",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leecornell0131-ux/roadster-racer.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/leecornell0131-ux/roadster-racer/issues"
+  },
+  "homepage": "https://github.com/leecornell0131-ux/roadster-racer#readme",
+  "devDependencies": {
+    "three": "^0.160.0"
+  }
+}
