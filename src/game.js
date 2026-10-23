@@ -5,6 +5,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100, makeBlackwell } from './models.js';
+import { upgradeRoadster, loadCar, instance, addSensorKit, CARS } from './realcars.js';
 
 // ---------- quality ----------
 const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -496,20 +497,43 @@ function resetRace() {
   for (const p of pickups) scene.remove(p.mesh);
   spawnTraffic(); spawnPickups();
 }
+// who's on the road: real car models where they loaded, procedural stand-ins otherwise
+const TRAFFIC = {
+  waymo: { car: 'ioniq5', kit: true, name: '웨이모', speed: [20, 24], brakes: true, n: 9 },
+  robotaxi: { car: 'modely', name: '테슬라 로보택시', speed: [31, 35], color: '#f2f2f0', n: 4 },
+  model3: { car: 'model3', name: '모델 3', speed: [26, 32], n: 3 },
+  cybertruck: { car: 'cybertruck', name: '사이버트럭', speed: [24, 29], n: 2 },
+  dolphin: { car: 'dolphin', name: 'BYD 돌핀', speed: [29, 35], n: 3 },
+  sealion: { car: 'sealion7', name: 'BYD 씰라이언', speed: [28, 33], n: 3 },
+  bus: { car: 'torino', name: 'BYD 전기버스', speed: [14, 17], n: 2 },
+};
+const trafficProtos = {};
+const trafficReady = Promise.all(Object.entries(TRAFFIC).map(async ([k, d]) => {
+  try { const pr = await loadCar(d.car); trafficProtos[k] = d.kit ? addSensorKit(pr) : pr; }
+  catch (e) { console.warn('traffic model failed, using stand-in', k, e); }
+}));
 function spawnTraffic() {
   traffic = [];
   const wProto = makeWaymo(), cProto = makeCybercab();
-  for (let i = 0; i < 26; i++) {
-    const waymo = i % 5 !== 2;
-    const mesh = (waymo ? wProto : cProto).clone();
-    const tail = (waymo ? wProto : cProto).userData.tail.clone();
-    mesh.traverse((o) => { if (o.name === 'tail') o.material = tail; });
-    mesh.userData = { tail, pivot: mesh.getObjectByName('pivot') };
-    const t = { type: waymo ? 'waymo' : 'cab', s: 180 + i * 85 + Math.random() * 40, d: 0, dT: 0, y: 0, base: waymo ? 20 + Math.random() * 4 : 31 + Math.random() * 4, v: 0, brakeT: 0, cool: 0, over: false, mesh };
+  const roster = Object.entries(TRAFFIC).flatMap(([k, d]) => Array(d.n).fill(k));
+  for (let i = roster.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [roster[i], roster[j]] = [roster[j], roster[i]]; }
+  roster.forEach((type, i) => {
+    const d = TRAFFIC[type];
+    let mesh;
+    if (trafficProtos[type]) mesh = instance(trafficProtos[type], d.color);
+    else {
+      const pr = d.brakes ? wProto : cProto;
+      mesh = pr.clone();
+      const tail = pr.userData.tail.clone();
+      mesh.traverse((o) => { if (o.name === 'tail') o.material = tail; });
+      mesh.userData = { tail, pivot: mesh.getObjectByName('pivot'), wheels: [], size: new THREE.Vector3(2.1, 1.6, 4.7) };
+    }
+    const sz = mesh.userData.size;
+    const t = { type, name: d.name, brakes: !!d.brakes, hl: sz.z / 2, hw: sz.x / 2, h: Math.min(sz.y, 3.6), s: 180 + i * 85 + Math.random() * 40, d: 0, dT: 0, y: 0, base: d.speed[0] + Math.random() * (d.speed[1] - d.speed[0]), v: 0, brakeT: 0, cool: 0, over: false, mesh };
     t.v = t.base; t.d = t.dT = LANES[(Math.random() * 4) | 0];
     if (t.s > GAP0 - 70) t.s -= 900;
     scene.add(mesh); traffic.push(t);
-  }
+  });
 }
 function addPickup(type, s, d, y) {
   const mesh = pickupProtos[type].clone();
@@ -755,13 +779,13 @@ function step(dt) {
       if (t.s < P.s + 120) t.s = P.s - 100; // nothing left ahead: park it behind
     }
     const ds = t.s - P.s, dd = Math.abs(t.d - P.d);
-    if (t.type === 'waymo' && t.brakeT <= 0 && t.cool <= 0 && ds > -6 && ds < 26 && dd < 6.5 && P.y < 2) {
+    if (t.brakes && t.brakeT <= 0 && t.cool <= 0 && ds > -6 && ds < 26 && dd < 6.5 && P.y < 2) {
       t.brakeT = 2.6;
       if (!radioFlags.has('lidar')) { radioFlags.add('lidar'); floatText('웨이모: 장애물 감지! 급정거!'); }
       else if (Math.random() < 0.3) floatText('웨이모: 장애물 감지!');
     }
-    if (Math.abs(ds) < 4.5 && dd < 2.1) {
-      if (P.y - t.y < 1.6) crash(t);
+    if (Math.abs(ds) < t.hl + 2.2 && dd < t.hw + 1) {
+      if (P.y - t.y < t.h) crash(t);
       else if (!t.over) { t.over = true; stats.jumpsOver++; gainXP(15, '자율주행차 뛰어넘기 +15 EXP'); P.boostG = Math.min(100, P.boostG + 15); blip(600, 900, 0.12); }
     }
   }
@@ -803,9 +827,15 @@ function land(g) {
     for (let i = 0; i < 12; i++) puff(base, new THREE.Vector3((Math.random() - 0.5) * 10, Math.random() * 3, (Math.random() - 0.5) * 10), '#a08a7a', 1.3, 0.8);
   }
 }
+// Korean 와/과 by whether the last syllable has a final consonant
+function withWa(w) {
+  const c = w.charCodeAt(w.length - 1);
+  const batchim = c >= 0xac00 && c <= 0xd7a3 ? (c - 0xac00) % 28 !== 0 : '013678'.includes(w[w.length - 1]);
+  return batchim ? '과' : '와';
+}
 function crash(t) {
-  P.v = Math.min(P.v * 0.45, t.v + 2); P.s = t.s - 4.6; P.crashT = 0.8; P.shake = 0.8;
-  toast('쾅!', t.type === 'waymo' ? '웨이모와 충돌' : '로보택시와 충돌', '#ff3d6e');
+  P.v = Math.min(P.v * 0.45, t.v + 2); P.s = t.s - t.hl - 2.3; P.crashT = 0.8; P.shake = 0.8;
+  toast('쾅!', t.name + withWa(t.name) + ' 충돌', '#ff3d6e');
   blip(180, 40, 0.35, 'sawtooth', 0.2);
   const base = world(P.s + 2, P.d, 1);
   for (let i = 0; i < 18; i++) puff(base, new THREE.Vector3((Math.random() - 0.5) * 10, Math.random() * 5, (Math.random() - 0.5) * 10), i % 2 ? '#ffb347' : '#555', 0.9, 0.6);
@@ -870,9 +900,11 @@ function placeCar() {
 }
 function syncTraffic(time) {
   for (const t of traffic) {
+    t.mesh.visible = Math.abs(t.s - P.s) < 380; if (!t.mesh.visible) continue;
     world(t.s, t.d, t.y, t.mesh.position);
     t.mesh.rotation.y = frame(t.s).yaw;
     if (t.mesh.userData.pivot) t.mesh.userData.pivot.rotation.y = time * 5 + t.s;
+    for (const w of t.mesh.userData.wheels) w.children[0].rotation.x = -t.s / w.userData.r;
     const braking = t.brakeT > 0;
     t.mesh.userData.tail.color.setRGB(braking ? (Math.sin(time * 18) > 0 ? 8 : 1) : 2.5, braking ? 1.2 : 0.15, 0.2);
   }
@@ -986,8 +1018,14 @@ function loop(now) {
 }
 
 // ---------- boot ----------
-function boot() {
+const carReady = Promise.race([
+  upgradeRoadster(car).catch((e) => console.warn('real roadster failed, keeping stand-in', e)),
+  new Promise((ok) => setTimeout(ok, 20000)),
+]);
+async function boot() {
   buildWorld();
+  await carReady; await trafficReady;
+  $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · HDRI: Poly Haven (CC0)';
   resetRace(); placeCar(); syncTraffic(0); syncPickups(0);
   state = 'poster';
   $('startBtn').disabled = false; $('startBtn').textContent = '출발';
@@ -996,5 +1034,5 @@ function boot() {
 }
 document.fonts?.ready.then(() => setTimeout(boot, 30)) ?? setTimeout(boot, 30);
 requestAnimationFrame(loop);
-window.__game = { get pickups() { return pickups; }, get traffic() { return traffic; }, P, get state() { return state; }, input, scene, camera, car, THREE, models: { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100 },
+window.__game = { get pickups() { return pickups; }, get traffic() { return traffic; }, P, get state() { return state; }, input, scene, camera, car, THREE, realcars: { loadCar, instance, CARS }, models: { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100 },
   freeze(on) { this.frozen = on; } };

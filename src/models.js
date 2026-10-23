@@ -79,7 +79,7 @@ export function labelTex(lines, opts = {}) {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
   return t;
 }
-function wheel({ r = 0.36, width = 0.28, rim = '#c9ccd6', spokes = 10, rimR = 0.25, aero = false }) {
+export function wheel({ r = 0.36, width = 0.28, rim = '#c9ccd6', spokes = 10, rimR = 0.25, aero = false }) {
   const g = new THREE.Group();
   const tireGeo = new THREE.TorusGeometry(r - 0.08, 0.085, 12, 32);
   const tire = new THREE.MeshStandardMaterial({ color: '#111114', roughness: 0.85 });

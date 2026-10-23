@@ -94,6 +94,7 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
 .go:disabled { opacity: .5; cursor: progress; }
 .go:focus-visible, #mute:focus-visible { outline: 3px solid var(--neon); outline-offset: 3px; }
 #saveLine, #loadTxt { font: 500 12px var(--f-hud); opacity: .7; letter-spacing: .05em; }
+#credits { position: fixed; right: 12px; top: 8px; max-width: 36vw; text-align: right; font: 400 8px/1.35 var(--f-hud); opacity: .4; pointer-events: none; }
 /* results */
 #results { align-items: center; justify-content: center; background: rgba(11, 7, 22, .72); }
 .rcard { width: min(560px, 100%); max-height: 100%; overflow-y: auto; padding: 18px 22px 16px; text-align: center; box-sizing: border-box; }
@@ -133,6 +134,7 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
 <canvas id="game"></canvas>
 
 <div id="poster">
+      <div id="credits"></div>
   <div class="pwrap">
     <div>
       <div class="eyebrow">STAGE 01 · ROBOTAXI CITY</div>
@@ -143,7 +145,7 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
         <button class="go" id="startBtn" disabled>트랙 생성 중…</button>
         <button class="ghost" id="garageBtn" type="button">X 개러지</button>
         <span id="saveLine"></span>
-        <span id="loadTxt">오스틴 도로를 까는 중</span>
+        <span id="loadTxt">오스틴 도로를 까는 중 · 실제 차 모델 불러오는 중</span>
       </div>
     </div>
     <div class="tweet panel">
