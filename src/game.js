@@ -20,7 +20,6 @@ const GAP0 = 2500, GAP1 = 2536;          // broken Congress Ave bridge
 const BRIDGE0 = 2445, BRIDGE1 = 2615;
 const FINISH_S = 2900;
 const JUMP_V = 13;
-const RECHARGE = 8;                       // seconds per jump charge
 const AIR_FUEL = 1.3;                     // seconds of landing thrust
 
 // ---------- cast ----------
@@ -33,12 +32,25 @@ export const CAST = {
 const SAVE_KEY = 'roadster-racer-save-v1';
 const save = loadSave();
 function loadSave() {
-  try { return Object.assign({ level: 1, xp: 0, doge: 0, best: 0 }, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); }
-  catch { return { level: 1, xp: 0, doge: 0, best: 0 }; }
+  const base = () => ({ level: 1, xp: 0, doge: 0, best: 0, up: { magnet: 0, tank: 0, comp: 0, motor: 0 } });
+  try { const s = Object.assign(base(), JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); s.up = Object.assign(base().up, s.up); return s; }
+  catch { return base(); }
 }
+let saveTimer = 0;
+function writeSaveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(writeSave, 800); }
 function writeSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} }
 const xpNeed = (lv) => 100 + (lv - 1) * 80;
-const maxCharges = () => Math.min(8, 2 + save.level);
+// ---------- upgrades (X Garage) ----------
+// cost(lv) is the price of the next level; Dogecoin only (soft currency).
+const UPGRADES = {
+  magnet: { name: '자석', desc: (l) => `끌어당김 범위 ${magnetRange(l).toFixed(1)}m`, max: 8, cost: (l) => Math.round(60 * Math.pow(1.55, l)) },
+  tank: { name: '압축공기 탱크', desc: (l) => `점프 최대 +${l}회`, max: 4, cost: (l) => Math.round(180 * Math.pow(1.9, l)) },
+  comp: { name: '컴프레서', desc: (l) => `점프 충전 ${recharge(l).toFixed(1)}초`, max: 5, cost: (l) => Math.round(90 * Math.pow(1.65, l)) },
+  motor: { name: '듀얼 모터', desc: (l) => `최고속도 +${l * 4 * 3.6 | 0}km/h`, max: 6, cost: (l) => Math.round(110 * Math.pow(1.6, l)) },
+};
+const magnetRange = (l = save.up.magnet) => 3 + l * 1.6 + (save.level - 1) * 0.15;
+const recharge = (l = save.up.comp) => 8 - l * 0.9;
+const maxCharges = () => Math.min(12, 2 + save.level + save.up.tank);
 
 // ---------- track geometry ----------
 function cx(s) {
@@ -78,6 +90,8 @@ function rampAt(s, d) {
   for (const r of RAMPS) if (s >= r.s0 && s <= r.s0 + r.len && d >= r.dL && d <= r.dR) return r;
   return null;
 }
+// the car is ~1.8 m wide: it rides up a ramp if either side is on it
+function carGround(s, d) { return Math.max(groundAt(s, d - 0.8), groundAt(s, d), groundAt(s, d + 0.8)); }
 function groundAt(s, d) {
   if (s > GAP0 && s < GAP1) return -1e9;
   const r = rampAt(s, d);
@@ -465,6 +479,8 @@ function updatePuffs(dt) {
 
 // ---------- game state ----------
 const car = makeRoadster(); scene.add(car);
+const magnetRing = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 1.6, 2.2), transparent: true, opacity: 0.22, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+magnetRing.rotation.x = -Math.PI / 2; scene.add(magnetRing);
 const P = {};
 let traffic = [], pickups = [], state = 'loading', raceT = 0, countdown = 0, penalty = 0;
 const stats = { perfect: 0, coins: 0, xpGain: 0, dogeGain: 0, jumpsOver: 0 };
@@ -489,8 +505,8 @@ function spawnTraffic() {
     const tail = (waymo ? wProto : cProto).userData.tail.clone();
     mesh.traverse((o) => { if (o.name === 'tail') o.material = tail; });
     mesh.userData = { tail, pivot: mesh.getObjectByName('pivot') };
-    const t = { type: waymo ? 'waymo' : 'cab', s: 180 + i * 85 + Math.random() * 40, d: LANES[(Math.random() * 4) | 0], base: waymo ? 20 + Math.random() * 4 : 31 + Math.random() * 4, v: 0, brakeT: 0, cool: 0, over: false, mesh };
-    t.v = t.base;
+    const t = { type: waymo ? 'waymo' : 'cab', s: 180 + i * 85 + Math.random() * 40, d: 0, dT: 0, y: 0, base: waymo ? 20 + Math.random() * 4 : 31 + Math.random() * 4, v: 0, brakeT: 0, cool: 0, over: false, mesh };
+    t.v = t.base; t.d = t.dT = LANES[(Math.random() * 4) | 0];
     if (t.s > GAP0 - 70) t.s -= 900;
     scene.add(mesh); traffic.push(t);
   }
@@ -620,7 +636,7 @@ function renderPips() {
   const max = maxCharges();
   if (hud.pips.childElementCount !== max) hud.pips.innerHTML = '<i></i>'.repeat(max);
   [...hud.pips.children].forEach((el, i) => {
-    const fill = i < P.charges ? 1 : i === P.charges ? P.recharge / RECHARGE : 0;
+    const fill = i < P.charges ? 1 : i === P.charges ? P.recharge / recharge() : 0;
     el.style.setProperty('--f', fill);
     el.classList.toggle('full', fill >= 1);
   });
@@ -657,7 +673,7 @@ function step(dt) {
   const fr0 = frame(P.s);
   // speed
   const boosting = P.boostT > 0;
-  let vmax = 62 + save.level * 0.8 + (boosting ? 20 : 0);
+  let vmax = 62 + save.level * 0.8 + save.up.motor * 4 + (boosting ? 20 : 0);
   let acc = (boosting ? 34 : 15) * Math.max(0, 1 - P.v / vmax) + (boosting ? 6 : 0);
   if (P.v > vmax) acc = -12;
   if (P.crashT > 0) { P.crashT -= dt; acc *= 0.3; }
@@ -668,35 +684,39 @@ function step(dt) {
 
   // steering
   const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-  P.d += steer * (P.grounded ? 15 : 9) * dt * Math.min(1, 0.4 + P.v / 40);
+  P.d += steer * (P.grounded ? 15 : 14) * dt * Math.min(1, 0.4 + P.v / 40);
   P.d = THREE.MathUtils.clamp(P.d, -ROAD_HALF + 1.2, ROAD_HALF - 1.2);
   P.steerVis += (steer - P.steerVis) * Math.min(1, dt * 8);
   P.s += P.v * dt;
 
   // jump / thrust
-  if (input.jumpEdge && P.grounded) {
+  if (input.jumpEdge) P.jumpBuf = 0.18;
+  P.jumpBuf = Math.max(0, (P.jumpBuf || 0) - dt);
+  P.coyote = P.grounded ? 0.28 : Math.max(0, (P.coyote || 0) - dt);
+  if (P.jumpBuf > 0 && (P.grounded || P.coyote > 0)) {
+    P.jumpBuf = 0; P.coyote = 0;
     if (P.charges > 0) {
-      P.charges--; P.vy = JUMP_V + P.slope * P.v; P.grounded = false; P.air = 0;
+      P.charges--; P.vy = Math.max(P.vy, 0) * (P.grounded ? 0 : 1) + JUMP_V + (P.grounded ? P.slope * P.v : 0); P.grounded = false; P.air = 0;
       // signature move from the Roadster demo: a full sideways twist in the air
       P.rollDir = steer !== 0 ? steer : -P.rollDir; P.rollTo = P.roll + Math.PI * 2 * P.rollDir;
       blip(160, 520, 0.25, 'triangle', 0.15);
       const base = world(P.s, P.d, P.y);
       for (let i = 0; i < 14; i++) puff(base, new THREE.Vector3((Math.random() - 0.5) * 12, -1 + Math.random() * 2, (Math.random() - 0.5) * 12), '#e8f6ff', 1.2, 0.7);
-    } else { toast('충전 중…', '압축공기가 부족해요', '#ff3d6e'); blip(200, 120, 0.15, 'square', 0.06); }
+    } else if (input.jumpEdge) { toast('충전 중…', '압축공기가 부족해요', '#ff3d6e'); blip(200, 120, 0.15, 'square', 0.06); }
   }
   input.jumpEdge = false;
-  if (P.recharge < RECHARGE && P.charges < maxCharges()) {
+  if (P.charges < maxCharges()) {
     P.recharge += dt;
-    if (P.recharge >= RECHARGE) { P.recharge = 0; P.charges++; }
+    if (P.recharge >= recharge()) { P.recharge = 0; P.charges++; }
   } else if (P.charges >= maxCharges()) P.recharge = 0;
 
   P.thrusting = false;
-  const g = groundAt(P.s, P.d);
+  const g = carGround(P.s, P.d);
   if (P.grounded) {
     if (g < P.y - 0.3) { // left a ramp top or a broken bridge
       P.grounded = false; P.vy = P.slope * P.v; P.air = 0;
     } else {
-      const r = rampAt(P.s, P.d); P.slope = r ? r.h / r.len : 0; P.y = g;
+      const r = rampAt(P.s, P.d) || rampAt(P.s, P.d - 0.8) || rampAt(P.s, P.d + 0.8); P.slope = r ? r.h / r.len : 0; P.y = g;
     }
     P.fuel = Math.min(AIR_FUEL, P.fuel + dt * 1.5);
   }
@@ -725,8 +745,13 @@ function step(dt) {
     else t.v += (t.base - t.v) * Math.min(1, dt * 0.8);
     t.cool -= dt;
     t.s += t.v * dt;
+    // lidar (and the robotaxi's cameras) see the ramp ahead and change lane
+    const ahead = RAMPS.find((r) => r.s0 - t.s > 0 && r.s0 - t.s < 45 && t.dT + 1.2 > r.dL && t.dT - 1.2 < r.dR);
+    if (ahead) { const free = LANES.filter((l) => !RAMPS.some((r) => Math.abs(r.s0 - ahead.s0) < 2 && l + 1.2 > r.dL && l - 1.2 < r.dR)); if (free.length) t.dT = free.reduce((a, b) => (Math.abs(b - t.d) < Math.abs(a - t.d) ? b : a)); }
+    t.d += THREE.MathUtils.clamp(t.dT - t.d, -6 * dt, 6 * dt);
+    t.y = carGround(t.s, t.d);
     if (t.s < P.s - 80 || t.s > GAP0 - 40) {
-      t.s = Math.min(GAP0 - 60, P.s + 320 + Math.random() * 380); t.d = LANES[(Math.random() * 4) | 0]; t.over = false; t.brakeT = 0; t.v = t.base;
+      t.s = Math.min(GAP0 - 60, P.s + 320 + Math.random() * 380); t.d = t.dT = LANES[(Math.random() * 4) | 0]; t.over = false; t.brakeT = 0; t.v = t.base;
       if (t.s < P.s + 120) t.s = P.s - 100; // nothing left ahead: park it behind
     }
     const ds = t.s - P.s, dd = Math.abs(t.d - P.d);
@@ -736,15 +761,23 @@ function step(dt) {
       else if (Math.random() < 0.3) floatText('웨이모: 장애물 감지!');
     }
     if (Math.abs(ds) < 4.5 && dd < 2.1) {
-      if (P.y < 1.6) crash(t);
+      if (P.y - t.y < 1.6) crash(t);
       else if (!t.over) { t.over = true; stats.jumpsOver++; gainXP(15, '자율주행차 뛰어넘기 +15 EXP'); P.boostG = Math.min(100, P.boostG + 15); blip(600, 900, 0.12); }
     }
   }
 
   // pickups
+  const R = magnetRange(), cy = P.y + 0.7;
   for (const p of pickups) {
     if (p.taken) continue;
-    const ds = p.s - P.s; if (ds > 6 || ds < -4) continue;
+    let ds = p.s - P.s; if (ds > R + 6 || ds < -R) continue;
+    // magnet: anything inside the radius flies to the car, faster than the car moves
+    const dd = P.d - p.d, dy = cy - p.y, dist = Math.hypot(ds, dd, dy);
+    if (p.type !== 'legend' && (p.pulled || dist < R)) {
+      p.pulled = true;
+      const sp = (P.v + 30) * dt, k = Math.min(1, sp / Math.max(dist, 0.001));
+      p.s -= ds * k; p.d += dd * k; p.y += dy * k; ds = p.s - P.s;
+    }
     if (Math.abs(p.d - P.d) < PICK[p.type].r && Math.abs(p.y - (P.y + 0.7)) < PICK[p.type].r + 0.4) collect(p);
   }
 
@@ -789,7 +822,7 @@ function splash() {
 function collect(p) {
   p.taken = true; scene.remove(p.mesh);
   switch (p.type) {
-    case 'coin': save.doge += 5; stats.dogeGain += 5; stats.coins++; P.boostG = Math.min(100, P.boostG + 3); blip(988, 1480, 0.09, 'square', 0.06); break;
+    case 'coin': save.doge += 5; writeSaveSoon(); stats.dogeGain += 5; stats.coins++; P.boostG = Math.min(100, P.boostG + 3); blip(988, 1480, 0.09, 'square', 0.06); break;
     case 'air': P.charges = Math.min(maxCharges(), P.charges + 1); P.fuel = AIR_FUEL; floatText('압축공기 +1'); blip(300, 900, 0.18, 'sine', 0.12); break;
     default: gainXP(PICK[p.type].xp, PICK[p.type].label); blip(660, 1320, 0.16, 'triangle', 0.14);
       if (p.type === 'legend') { toast('전설의 블랙웰 칩!', '+200 EXP', '#b07dff'); radio('그거 젠슨이 찾고 있던 건데… 우리가 가져가자.'); }
@@ -831,12 +864,13 @@ function placeCar() {
   car.position.addScaledVector(fr.r, 0.55 * sr).y += 0.55 * cr;
   for (const w of car.userData.wheels) w.children.forEach((c) => (c.rotation.x -= P.v * 0.016));
   const blob = car.getObjectByName('blob'); if (blob) { blob.visible = groundAt(P.s, P.d) > -100; blob.position.y = 0.03 - P.y + groundAt(P.s, P.d); blob.material.opacity = 0.9 / (1 + Math.max(0, P.y - groundAt(P.s, P.d)) * 0.35); }
+  { const gr = carGround(P.s, P.d); magnetRing.visible = gr > -100 && state !== 'poster'; world(P.s, P.d, gr + 0.06, magnetRing.position); magnetRing.scale.setScalar(magnetRange()); }
   car.userData.jet.opacity = P.thrusting ? 0.9 : Math.max(0, car.userData.jet.opacity - 0.08);
   car.userData.tail.color.setRGB(input.brake ? 8 : 4, 0.25, 0.35);
 }
 function syncTraffic(time) {
   for (const t of traffic) {
-    world(t.s, t.d, 0, t.mesh.position);
+    world(t.s, t.d, t.y, t.mesh.position);
     t.mesh.rotation.y = frame(t.s).yaw;
     if (t.mesh.userData.pivot) t.mesh.userData.pivot.rotation.y = time * 5 + t.s;
     const braking = t.brakeT > 0;
@@ -892,11 +926,34 @@ addEventListener('resize', resize);
 // ---------- flow ----------
 function startRace() {
   initAudio(); if (AC && AC.state === 'suspended') AC.resume();
-  $('poster').hidden = true; $('results').hidden = true; $('hud').hidden = false;
+  $('poster').hidden = true; $('results').hidden = true; $('garage').hidden = true; $('hud').hidden = false;
   resetRace(); placeCar();
   const fr = frame(0); camPos.copy(car.position).addScaledVector(fr.f, -9); camPos.y = 3.4; camLook.copy(car.position);
   state = 'count'; countdown = 3.2;
 }
+// ---------- X Garage ----------
+function renderGarage() {
+  $('gDoge').textContent = save.doge.toLocaleString();
+  $('gList').innerHTML = Object.entries(UPGRADES).map(([k, u]) => {
+    const l = save.up[k], maxed = l >= u.max, cost = u.cost(l);
+    return `<div class="gitem"><div><h3>${u.name}</h3><div class="lvl">${'<i class="on"></i>'.repeat(l)}${'<i></i>'.repeat(u.max - l)}</div></div>
+      <button class="buy" data-up="${k}" ${maxed || save.doge < cost ? 'disabled' : ''}>${maxed ? 'MAX' : `Ð ${cost.toLocaleString()}`}</button>
+      <p>지금: ${u.desc(l)}${maxed ? '' : ` → <b>${u.desc(l + 1)}</b>`}</p></div>`;
+  }).join('');
+}
+$('gList').addEventListener('click', (e) => {
+  const k = e.target.closest('[data-up]')?.dataset.up; if (!k) return;
+  const u = UPGRADES[k], l = save.up[k], cost = u.cost(l);
+  if (l >= u.max || save.doge < cost) return;
+  save.doge -= cost; save.up[k]++; writeSave(); renderGarage(); refreshSaveLine();
+  initAudio(); blip(520, 1560, 0.25, 'triangle', 0.15);
+});
+function openGarage() { renderGarage(); $('garage').hidden = false; $('gClose').focus(); }
+$('garageBtn').addEventListener('click', openGarage);
+$('garageBtn2').addEventListener('click', openGarage);
+$('gClose').addEventListener('click', () => { $('garage').hidden = true; });
+function refreshSaveLine() { $('saveLine').textContent = `LV ${save.level} · Ð ${save.doge.toLocaleString()}${save.best ? ` · 최고 기록 ${fmtTime(save.best)}` : ''}`; }
+
 $('startBtn').addEventListener('click', startRace);
 $('againBtn').addEventListener('click', startRace);
 
@@ -935,9 +992,9 @@ function boot() {
   state = 'poster';
   $('startBtn').disabled = false; $('startBtn').textContent = '출발';
   $('loadTxt').hidden = true;
-  $('saveLine').textContent = `LV ${save.level} · Ð ${save.doge.toLocaleString()}${save.best ? ` · 최고 기록 ${fmtTime(save.best)}` : ''}`;
+  refreshSaveLine();
 }
 document.fonts?.ready.then(() => setTimeout(boot, 30)) ?? setTimeout(boot, 30);
 requestAnimationFrame(loop);
-window.__game = { P, get state() { return state; }, input, scene, camera, car, THREE, models: { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100 },
+window.__game = { get pickups() { return pickups; }, get traffic() { return traffic; }, P, get state() { return state; }, input, scene, camera, car, THREE, models: { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100 },
   freeze(on) { this.frozen = on; } };
