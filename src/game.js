@@ -476,7 +476,7 @@ function updatePuffs(dt) {
 }
 
 // ---------- game state ----------
-const car = makeRoadster(); scene.add(car);
+const car = makeRoadster(); scene.add(car); kit.car = car;
 const magnetRing = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 1.6, 2.2), transparent: true, opacity: 0.22, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
 magnetRing.rotation.x = -Math.PI / 2; scene.add(magnetRing);
 const P = {};
@@ -487,8 +487,8 @@ const radioQueue = [];
 const radioFlags = new Set();
 
 function resetRace() {
-  Object.assign(P, { s: 0, d: 3, y: 0, v: 0, vy: 0, grounded: true, charges: maxCharges(), recharge: 0, fuel: AIR_FUEL, slope: 0, air: 0, boostT: 0, boostG: 30, crashT: 0, shake: 0, steerVis: 0, roll: 0, rollTo: 0, rollDir: 1, finished: false, coil: 0, bonkT: 0, roofRun: 0, lastG: 0, kG: 0, slipT: 0, slipV: 0 });
-  boss?.reset();
+  Object.assign(P, { s: 0, d: 3, y: 0, v: 0, vy: 0, grounded: true, charges: maxCharges(), recharge: 0, fuel: AIR_FUEL, slope: 0, air: 0, boostT: 0, boostG: 30, crashT: 0, shake: 0, steerVis: 0, roll: 0, rollTo: 0, rollDir: 1, finished: false, coil: 0, bonkT: 0, roofRun: 0, lastG: 0, kG: 0, slipT: 0, slipV: 0, heat: 0, overheat: 0 });
+  boss?.reset(); for (const sh of gunShots) sh.m.visible = sh.live = false;
   raceT = 0; penalty = 0; swarmDone = false;
   Object.assign(stats, { perfect: 0, coins: 0, xpGain: 0, dogeGain: 0, jumpsOver: 0, roofs: 0 });
   radioFlags.clear(); radioQueue.length = 0;
@@ -732,7 +732,12 @@ function updateHUD() {
   hud.boost.style.width = `${P.boostG}%`;
   hud.fuel.style.width = `${100 * P.fuel / AIR_FUEL}%`;
   $('boostBtn').classList.toggle('ready', P.boostG >= 35);
-  if (boss?.B.active) {
+  if (GUN) {
+    $('coilRow').hidden = false; $('fireBtn').hidden = false; $('fireBtn').textContent = '🔥';
+    $('coilFill').style.width = `${P.heat}%`;
+    $('coilMeter').classList.toggle('full', P.overheat > 0); $('fireBtn').classList.toggle('ready', P.overheat <= 0);
+    $('coilTxt').textContent = P.overheat > 0 ? '🔥 과열! 식는 중…' : (IS_MOBILE ? '🔥 랩터 캐논 · 버튼 꾹' : '🔥 랩터 캐논 · F 꾹 누르기');
+  } else if (boss?.B.active) {
     $('coilFill').style.width = `${P.coil}%`;
     const ready = P.coil >= 100;
     $('coilMeter').classList.toggle('full', ready); $('fireBtn').classList.toggle('ready', ready);
@@ -741,6 +746,61 @@ function updateHUD() {
   renderPips();
 }
 const fmtTime = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}`;
+
+// ---------- Starship cannon (space stages): hold fire, the twin Raptor guns pick the nearest target ----------
+// stage.gun = { rate, dmg, heat (seconds of fire to overheat) }; targets: the boss's weak point, the boss's
+// drones (boss.targets) and whatever the stage offers (stage.targets(): [{ pos, hit(dmg), r }]).
+const GUN = ST.gun || null;
+const gunShots = [];
+if (GUN) {
+  const kh = document.getElementById('keysHint'); if (kh) kh.innerHTML = kh.innerHTML.replace('F 테슬라 코일(보스전)', 'F 꾹 = 랩터 캐논 연사');
+  const geo = new THREE.CylinderGeometry(0.13, 0.13, 4.5, 6); geo.rotateX(Math.PI / 2);
+  for (let i = 0; i < 48; i++) {
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 2.6, 5), transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    m.visible = false; scene.add(m); gunShots.push({ m, live: false, pos: new THREE.Vector3(), tgt: null, life: 0 });
+  }
+}
+let gunCd = 0, gunSide = 1;
+const _gv = new THREE.Vector3(), _gt = new THREE.Vector3();
+function gunTargets() {
+  const out = [...(ST.targets?.() || []), ...(boss?.targets?.() || [])];
+  if (boss?.B.active && !boss.B.defeated && boss.B.mesh.visible) out.push({ pos: boss.B.mesh.userData.eye.getWorldPosition(new THREE.Vector3()), r: 2.5, boss: true, hit: (n) => boss.damage(n, '랩터 캐논', true) });
+  return out;
+}
+function stepGun(dt) {
+  P.overheat = Math.max(0, P.overheat - dt);
+  P.heat = Math.max(0, P.heat - dt * (P.overheat > 0 ? 45 : 30));
+  gunCd -= dt;
+  if (input.fire && P.overheat <= 0 && gunCd <= 0) {
+    gunCd = 1 / GUN.rate;
+    P.heat += 100 / (GUN.rate * GUN.heat) + 30 / GUN.rate;
+    if (P.heat >= 100) { P.heat = 100; P.overheat = 1.6; toast('과열!', '랩터 캐논 냉각 중', '#ff6a1a'); blip(400, 90, 0.4, 'sawtooth', 0.12); }
+    // nearest target ahead, in a cone in front of the car
+    const me = world(P.s, P.d, P.y + 1, _gv);
+    let best = null, bd = 1e9;
+    for (const t of gunTargets()) {
+      const dz = me.z - t.pos.z, dist = me.distanceTo(t.pos);
+      if (dz < 3 || dist > 170 || Math.abs(t.pos.x - me.x) > dz * 0.9 + 6) continue;
+      const score = dist - (t.boss ? 25 : 0); if (score < bd) { bd = score; best = t; }
+    }
+    const sh = gunShots.find((x) => !x.live);
+    if (sh) {
+      gunSide = -gunSide;
+      world(P.s + 1.8, P.d + gunSide * 0.95, P.y + 1.05, sh.pos);
+      sh.tgt = best; sh.live = true; sh.life = 0.9; sh.m.visible = true;
+      sh.dir = best ? best.pos.clone().sub(sh.pos).normalize() : new THREE.Vector3(-Math.sin(frame(P.s).yaw), 0.02, -Math.cos(frame(P.s).yaw));
+      blip(1400, 700, 0.06, 'square', 0.035);
+    }
+  }
+  for (const sh of gunShots) {
+    if (!sh.live) continue;
+    sh.life -= dt;
+    if (sh.tgt) { _gt.copy(sh.tgt.pos).sub(sh.pos); const dist = _gt.length(); if (dist < 4 + (sh.tgt.r || 1)) { sh.tgt.hit(GUN.dmg); sh.live = false; sh.m.visible = false; puff(sh.pos, new THREE.Vector3(0, 2, 0), '#9fd8ff', 0.8, 0.25); continue; } sh.dir.lerp(_gt.normalize(), Math.min(1, dt * 14)).normalize(); }
+    sh.pos.addScaledVector(sh.dir, (P.v + 240) * dt);
+    sh.m.position.copy(sh.pos); sh.m.lookAt(_gt.copy(sh.pos).add(sh.dir));
+    if (sh.life <= 0) { sh.live = false; sh.m.visible = false; }
+  }
+}
 
 // ---------- simulation ----------
 const RADIO_SCRIPT = ST.radio;
@@ -757,7 +817,8 @@ function slopeAt(s, d, y) {
 }
 function step(dt) {
   raceT += dt;
-  if (boss) { boss.update(dt); if (input.fireEdge) { input.fireEdge = false; if (!boss.fireCoil() && boss.B.active) floatText('코일 충전 중…'); } }
+  if (boss) { boss.update(dt); if (!GUN && input.fireEdge) { input.fireEdge = false; if (!boss.fireCoil() && boss.B.active) floatText('코일 충전 중…'); } }
+  if (GUN) { input.fireEdge = false; stepGun(dt); }
   const fr0 = frame(P.s);
   // speed
   const boosting = P.boostT > 0;
@@ -1242,4 +1303,5 @@ stageUI();
 document.fonts?.ready.then(() => setTimeout(boot, 30)) ?? setTimeout(boot, 30);
 requestAnimationFrame(loop);
 window.__game = { get boss() { return boss; }, get pickups() { return pickups; }, get traffic() { return traffic; }, P, get state() { return state; }, input, scene, camera, car, THREE, realcars: { loadCar, instance, CARS }, models: { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100 },
+  gunDbg: () => ({ heat: P.heat, over: P.overheat, me: world(P.s, P.d, P.y + 1).toArray(), targets: gunTargets().map((t) => t.pos.toArray()), live: gunShots.filter((x) => x.live).length }),
   freeze(on) { this.frozen = on; }, skipCount() { countdown = 0.01; }, snap() { snapCam = true; }, pcam: PCAM, get stage() { return ST; }, renderer, step: (dt) => step(dt) };

@@ -334,6 +334,79 @@ export function buildIceTruck() {
   return g;
 }
 
+
+// ---------- Jeff Baesongs' Late Shepherd (stage 8, the Moon) ----------
+// a stubby suborbital rocket with a crew capsule on top, flying low over the regolith on its engine.
+// A giant cowboy hat sits on the capsule. The big capsule window is the weak point.
+function shepherdLivery() {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 1024; const x = c.getContext('2d');
+  x.fillStyle = '#f2f3f5'; x.fillRect(0, 0, 512, 1024);
+  x.fillStyle = 'rgba(0,0,0,0.06)'; for (let y = 0; y < 1024; y += 128) x.fillRect(0, y, 512, 3);
+  for (let i = 0; i < 400; i++) { x.fillStyle = `rgba(120,110,100,${Math.random() * 0.05})`; x.fillRect(Math.random() * 512, Math.random() * 1024, 2 + Math.random() * 10, 1 + Math.random() * 3); }
+  x.save(); x.translate(256, 560); x.rotate(-Math.PI / 2);
+  x.font = '900 96px "Black Han Sans", "Noto Sans KR", sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillStyle = '#1b2a6b'; x.fillText('LATE SHEPHERD', 0, -60);
+  x.font = '900 56px "Black Han Sans", "Noto Sans KR", sans-serif'; x.fillStyle = '#2f62d8'; x.fillText('배송스 오리진 · 6년 늦게 출발', 0, 50);
+  x.restore();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+export function buildShepherd() {
+  const g = new THREE.Group();
+  const R = 2.3, H = 15;
+  const white = new THREE.MeshPhysicalMaterial({ map: shepherdLivery(), roughness: 0.35, metalness: 0.1, clearcoat: 0.6 });
+  const metal = new THREE.MeshStandardMaterial({ color: '#b9bec6', metalness: 1, roughness: 0.3 });
+  const dark = new THREE.MeshStandardMaterial({ color: '#25272c', metalness: 0.6, roughness: 0.5 });
+  const blue = new THREE.MeshStandardMaterial({ color: '#2c55c8', metalness: 0.3, roughness: 0.4 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(R, R, H, 48), white); body.position.y = H / 2 + 1.2; body.rotation.y = Math.PI / 2; g.add(body);
+  // the ring fin near the top and four wedge fins at the base
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(R + 0.9, 0.22, 8, 48), metal); ring.rotation.x = Math.PI / 2; ring.position.y = H - 0.6; g.add(ring);
+  for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2, st = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.4, 1.0), metal); st.position.set(Math.cos(a) * (R + 0.45), H - 0.6, Math.sin(a) * (R + 0.45)); st.rotation.y = -a; g.add(st); }
+  for (let i = 0; i < 4; i++) {
+    const a = i / 4 * Math.PI * 2 + Math.PI / 4, fin = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.6, 1.7), white);
+    fin.geometry.translate(0, 0, 0.85); fin.position.set(Math.cos(a) * R, 2.6, Math.sin(a) * R); fin.rotation.y = -a + Math.PI / 2; g.add(fin);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 3.2, 8), metal); leg.position.set(Math.cos(a) * (R + 0.9), 0.5, Math.sin(a) * (R + 0.9)); leg.rotation.set(Math.sin(a) * 0.35, 0, -Math.cos(a) * 0.35); g.add(leg);
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.5, 0.12, 12), dark); pad.position.set(Math.cos(a) * (R + 1.5), -1, Math.sin(a) * (R + 1.5)); g.add(pad);
+  }
+  const skirt = new THREE.Mesh(new THREE.CylinderGeometry(R, R * 0.85, 1.2, 48, 1, true), dark); skirt.position.y = 0.6; g.add(skirt);
+  const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.15, 1.4, 24, 1, true), new THREE.MeshStandardMaterial({ color: '#3a3532', metalness: 0.9, roughness: 0.35, side: THREE.DoubleSide })); bell.position.y = -0.4; g.add(bell);
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(1.1, 7, 20, 1, true), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.2, 3.2), transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+  flame.rotation.x = Math.PI; flame.position.y = -4.4; flame.geometry.translate(0, 0, 0); g.add(flame);
+  // crew capsule: blunt cone, dark windows, the big one facing the player is the eye
+  const capY = H + 1.2;
+  const cap = new THREE.Mesh(new THREE.LatheGeometry([[0.01, 3.4], [0.9, 3.25], [1.7, 2.6], [2.15, 1.3], [2.3, 0.2], [2.25, 0]].map(([r, y]) => new THREE.Vector2(r, y)), 48), white);
+  cap.position.y = capY; g.add(cap);
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(2.32, 2.32, 0.35, 48), blue); band.position.y = capY + 0.15; g.add(band);
+  const glass = new THREE.MeshPhysicalMaterial({ color: '#05070c', roughness: 0.05, metalness: 0.3, clearcoat: 1, envMapIntensity: 1.6 });
+  for (let i = 0; i < 6; i++) { if (i === 0) continue; const a = i / 6 * Math.PI * 2 + Math.PI / 2, w = new THREE.Mesh(new THREE.CircleGeometry(0.42, 24), glass); w.position.set(Math.cos(a) * 2.02, capY + 1.25, Math.sin(a) * 2.02); w.lookAt(Math.cos(a) * 9, capY + 2.2, Math.sin(a) * 9); g.add(w); }
+  const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.75, 0.3), toneMapped: false });
+  const win = new THREE.Mesh(new THREE.CircleGeometry(0.85, 32), eyeMat); win.position.set(0, capY + 1.3, 2.0); win.rotation.x = -0.32; g.add(win);
+  const frame = new THREE.Mesh(new THREE.TorusGeometry(0.88, 0.08, 8, 32), metal); frame.position.copy(win.position); frame.rotation.x = -0.32; g.add(frame);
+  // the passenger: a silhouette in the window
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 12), new THREE.MeshBasicMaterial({ color: '#2a1a12' })); head.position.set(0, capY + 1.25, 1.75); g.add(head);
+  const eye = new THREE.Object3D(); eye.position.set(0, capY + 1.3, 2.2); eye.name = 'eye'; g.add(eye);
+  // the hat: a cowboy hat sized for a rocket
+  const felt = new THREE.MeshStandardMaterial({ color: '#d8c39a', roughness: 0.9 });
+  const brim = new THREE.Mesh(new THREE.LatheGeometry([[0.01, 0.02], [2.0, 0.0], [3.4, 0.12], [4.1, 0.55], [4.25, 0.75], [4.0, 0.62], [3.3, 0.22], [2.0, 0.12], [0.01, 0.14]].map(([r, y]) => new THREE.Vector2(r, y)), 48), felt);
+  brim.scale.set(1, 1, 0.82); brim.position.y = capY + 2.9; brim.rotation.z = 0.08; g.add(brim);
+  const crown = new THREE.Mesh(new THREE.LatheGeometry([[2.0, 0], [2.05, 1.2], [1.9, 2.2], [1.4, 2.6], [0.6, 2.35], [0.01, 2.5]].map(([r, y]) => new THREE.Vector2(r, y)), 40), felt);
+  crown.scale.set(1, 1, 0.8); crown.position.y = capY + 3.0; crown.rotation.z = 0.08; g.add(crown);
+  const hatBand = new THREE.Mesh(new THREE.CylinderGeometry(2.07, 2.07, 0.35, 40, 1, true), new THREE.MeshStandardMaterial({ color: '#3a2416', roughness: 0.7 })); hatBand.scale.set(1, 1, 0.8); hatBand.position.y = capY + 3.25; hatBand.rotation.z = 0.08; g.add(hatBand);
+  g.traverse((o) => { if (o.isMesh && o !== flame) o.castShadow = true; });
+  const size = new THREE.Vector3(R * 2 + 2, capY + 6, R * 2 + 2);
+  g.userData = { size, pivots: [], jets: [flame], eyeMat, eye, shepherd: true, eyeCol: new THREE.Color(1, 0.72, 0.28) };
+  return g;
+}
+// delivery drone: four rotors and a parcel hanging under it
+function parcelTex(label = '당일배송') {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 256; const x = c.getContext('2d');
+  x.fillStyle = '#b88a58'; x.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 600; i++) { x.fillStyle = `rgba(${Math.random() < 0.5 ? '60,35,10' : '255,240,210'},${0.05 + Math.random() * 0.05})`; x.fillRect(Math.random() * 256, Math.random() * 256, 2, 2); }
+  x.fillStyle = 'rgba(80,130,220,0.85)'; x.fillRect(0, 110, 256, 36);
+  x.fillStyle = '#fff'; x.font = '900 30px "Black Han Sans", "Noto Sans KR", sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(label, 128, 129);
+  x.fillStyle = '#2a1a0a'; x.font = '700 18px sans-serif'; x.fillText('(지구 기준 3일)', 128, 190);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+
 export const BOSSES = {
   waymo: {
     name: '웨이모 마더십', sub: '라이다 47개 탑재', hp: 100, appearAt: 430, giveUpAt: 2420, hover: 4.6,
@@ -387,6 +460,20 @@ export const BOSSES = {
       flee: '국회의사당 쪽으로 도망갔어… 다음엔 꼭 잡자.',
     },
   },
+  bezos: {
+    name: '제프 배송스의 레이트 셰퍼드', sub: '배송스 오리진 · 항상 한 발 늦게 도착', hp: 170, appearAt: 700, giveUpAt: 3150, hover: 3, gap: 56, landGap: 34, shepherd: true, landing: true,
+    xp: 600, doge: 320, need: [],
+    dropHit: '당일배송 폭탄!', beamText: ['프라임 레이저!', '반품 불가 · 급감속', '#7ab8ff'],
+    lines: {
+      intro: '제프 배송스다! 우리보다 먼저 달에 왔다고 우기는 중. 랩터 캐논 F 꾹 눌러서 창문을 쏴!',
+      coil: '캐논은 꾹 누르면 연사돼. 너무 오래 쏘면 과열되니까 끊어서 쏴!',
+      jump: '착륙 연습할 땐 로켓이 바닥까지 내려와. 그때 창문에 쏟아부어!',
+      land: '착륙 연습한대! 지금이야, 집중 사격!',
+      half: '화났다! 배송 드론 떼거리랑 프라임 레이저까지. 드론부터 떨궈!',
+      win: '레이트 셰퍼드 추락! 모자는 무사하대.',
+      flee: '물류센터로 도망갔어… 다음엔 꼭 잡자.',
+    },
+  },
   trailer: {
     name: '클론 트레일러', sub: 'BYD 왕회장 전용 · 돌핀 무한 복제', hp: 110, appearAt: 1880, giveUpAt: 3080, ground: true,
     xp: 320, doge: 160, need: ['bus', 'dolphin'],
@@ -407,7 +494,8 @@ export function createBoss(ctx, key, protos) {
   for (const k of def.need || ['waymo']) if (!protos[k]) throw new Error('boss needs model ' + k);
   const orb = !!def.orb, lizard = !!def.lizard;
   const truck = !!def.truck;
-  const mesh = truck ? buildIceTruck() : def.ground ? buildCloneTrailer(protos) : orb ? buildOrb() : lizard ? buildHeadset() : buildWaymoMothership(protos.waymo);
+  const shepherd = !!def.shepherd;
+  const mesh = shepherd ? buildShepherd() : truck ? buildIceTruck() : def.ground ? buildCloneTrailer(protos) : orb ? buildOrb() : lizard ? buildHeadset() : buildWaymoMothership(protos.waymo);
   mesh.visible = false; ctx.scene.add(mesh);
   const size = mesh.userData.size;
   const ground = !!def.ground;
@@ -505,7 +593,25 @@ export function createBoss(ctx, key, protos) {
     const r = new THREE.Mesh(new THREE.BoxGeometry(ctx.ROAD_HALF * 2, 0.06, 0.4), new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 2.2, 3.4), toneMapped: false })); r.position.y = 0.05; g.add(r);
     return g;
   }
-  const makeDrop = truck ? makePaper : ground ? makeTag : orb ? makeRack : makeCone;
+  // Late Shepherd ammunition: same-day boxes and delivery drones
+  const boxMat = new THREE.MeshStandardMaterial({ map: parcelTex(), roughness: 0.9 });
+  function makeBox() { const g = new THREE.Group(); const b = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.2, 1.6), boxMat); b.position.y = 0.6; b.castShadow = true; g.add(b); return g; }
+  const droneMat = new THREE.MeshStandardMaterial({ color: '#e8eaee', metalness: 0.4, roughness: 0.35 });
+  const rotorMat = new THREE.MeshBasicMaterial({ color: '#aab', transparent: true, opacity: 0.35, depthWrite: false });
+  const ledMat2 = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 1.4, 4), toneMapped: false });
+  function makeDrone() {
+    const g = new THREE.Group();
+    const hub = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.25, 0.9), droneMat); g.add(hub);
+    for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 1.2), droneMat); arm.position.set(x * 0.45, 0, z * 0.45); arm.rotation.y = Math.atan2(x, z); g.add(arm);
+      const rot = new THREE.Mesh(new THREE.CircleGeometry(0.5, 16), rotorMat); rot.rotation.x = -Math.PI / 2; rot.position.set(x * 0.85, 0.12, z * 0.85); g.add(rot);
+    }
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), ledMat2); led.position.set(0, -0.05, 0.47); g.add(led);
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 0.8), boxMat); box.position.y = -0.6; g.add(box);
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    return g;
+  }
+  const makeDrop = shepherd ? makeBox : truck ? makePaper : ground ? makeTag : orb ? makeRack : makeCone;
   const home = { eye: mesh.userData.eye, eyeMat: mesh.userData.eyeMat, eyeCol: mesh.userData.eyeCol };
 
   // lightning bolt for the coil shot
@@ -533,14 +639,19 @@ export function createBoss(ctx, key, protos) {
     ctx.$('bossBar').hidden = true; ctx.$('coilRow').hidden = true; ctx.$('fireBtn').hidden = true; document.querySelector('.speed').classList.remove('boss');
     for (const st of stripes) st.visible = false; for (const b of beams) b.visible = false;
   }
-  function damage(n, why) {
+  function damage(n, why, quiet = false) {
     if (!B.active || B.defeated) return;
-    if (B.fired || B.doze) n = Math.round(n * 1.5);
-    B.hp -= n; B.hurtT = 0.35; hud();
+    if (B.fired || B.doze || B.land) n = quiet ? n * 1.5 : Math.round(n * 1.5);
+    B.hp -= n; B.hurtT = quiet ? 0.12 : 0.35; hud();
+    mesh.userData.eye.getWorldPosition(tmp);
+    if (quiet) { // rapid fire: one spark per hit, a number now and then
+      ctx.puff(tmp, new THREE.Vector3((Math.random() - 0.5) * 8, Math.random() * 5, (Math.random() - 0.5) * 8), '#ffd27a', 0.9, 0.35);
+      B.quietSum = (B.quietSum || 0) + n; if ((B.quietT = (B.quietT || 0) - 1) <= 0) { B.quietT = 6; ctx.floatText(`${why} -${Math.round(B.quietSum)}`); B.quietSum = 0; }
+    } else {
     ctx.floatText(`${why} -${n}`);
     ctx.blip(900, 200, 0.25, 'square', 0.16);
-    mesh.userData.eye.getWorldPosition(tmp);
-    for (let i = 0; i < 14; i++) ctx.puff(tmp, new THREE.Vector3((Math.random() - 0.5) * 18, Math.random() * 8, (Math.random() - 0.5) * 18), i % 2 ? '#ffb347' : '#ffe9a0', 1.4, 0.6);
+    }
+    if (!quiet) for (let i = 0; i < 14; i++) ctx.puff(tmp, new THREE.Vector3((Math.random() - 0.5) * 18, Math.random() * 8, (Math.random() - 0.5) * 18), i % 2 ? '#ffb347' : '#ffe9a0', 1.4, 0.6);
     if (B.phase === 1 && B.hp <= def.hp / 2) {
       if (orb) {
         if (!B.fired && !B.wasFired) {
@@ -607,6 +718,13 @@ export function createBoss(ctx, key, protos) {
       const hidden = new Set([nearLane, (Math.random() * NL) | 0]);
       spawnInvoices([...hidden], sW + 10);
       ctx.floatText('과대광고 홀로그램!');
+      B.atkT = 3.2;
+      return;
+    }
+    if (shepherd && Math.random() < (B.phase === 2 ? 0.45 : 0.3)) {
+      const n = B.phase === 2 ? 4 : 3;
+      for (let i = 0; i < n; i++) { const m = makeDrone(); ctx.scene.add(m); B.cones.push({ kind: 'drone', s: B.s - 4 - i * 7, d: ctx.LANES[(Math.random() * NL) | 0], y: 10 + i, vs: Math.max(10, P.v * 0.84), m, hit: false, landed: true, hp: 3, spin: Math.random() * 6 }); }
+      ctx.floatText('배송 드론 출동!'); ctx.blip(700, 1100, 0.3, 'triangle', 0.12);
       B.atkT = 3.2;
       return;
     }
@@ -695,12 +813,17 @@ export function createBoss(ctx, key, protos) {
       }
       B.bumpT = (B.bumpT || 0) - dt;
     } else {
+      // landing practice (Late Shepherd, phase 2): it sets down on the road ahead for a few seconds
+      if (def.landing && B.phase === 2) {
+        if (B.land) { B.land.t -= dt; if (B.land.t <= 0) { B.land = null; B.landT = 9 + Math.random() * 4; ctx.floatText('재발사!'); } }
+        else if ((B.landT = (B.landT ?? 4) - dt) <= 0 && !B.telegraph && !B.beam) { B.land = { t: 3.5 }; ctx.toast('착륙 연습 중!', '3.5초 무방비 · 데미지 1.5배', '#ffc83d'); ctx.radio(def.lines.land); }
+      }
       // hover ahead, matching speed, weaving slowly
-      B.gap = 23 + Math.sin(t * 0.7) * 4;
+      B.gap = (B.land ? def.landGap ?? 32 : def.gap ?? 23) + Math.sin(t * 0.7) * 4;
       B.s += P.v * dt + (P.s + B.gap - B.s) * Math.min(1, dt * 1.5);
       const targetD = B.telegraph ? B.d : Math.sin(t * 0.45) * 5;
       B.d += (targetD - B.d) * Math.min(1, dt * 1.5);
-      const hoverY = def.hover + Math.sin(t * 2.1) * 0.35;
+      const hoverY = B.land ? 1.3 : def.hover + Math.sin(t * 2.1) * 0.35;
       if (!B.fired) B.y += (hoverY - B.y) * Math.min(1, dt * 1.5);
     }
 
@@ -749,11 +872,11 @@ export function createBoss(ctx, key, protos) {
       const ds = B.s - P.s;
       if (!B.beam.hit && inLane && ds > 0 && ds < STRIPE_LEN + 4 && P.y - ground < 1.3) {
         B.beam.hit = true; P.v *= 0.55; P.crashT = 0.6; P.shake = 0.6;
-        if (lizard) ctx.toast('혀 날름!', '렙틸리언 혀에 붙잡힘', '#7dff5a'); else if (truck) ctx.toast('연비 규제 레이저!', '리터당 50km 미달 · 급감속', '#7ab8ff'); else ctx.toast('장애물 감지!', '라이다에 걸려 급정거', '#ff3d6e');
+        if (lizard) ctx.toast('혀 날름!', '렙틸리언 혀에 붙잡힘', '#7dff5a'); else if (truck) ctx.toast('연비 규제 레이저!', '리터당 50km 미달 · 급감속', '#7ab8ff'); else if (def.beamText) ctx.toast(...def.beamText); else ctx.toast('장애물 감지!', '라이다에 걸려 급정거', '#ff3d6e');
         ctx.blip(200, 60, 0.4, 'square', 0.2);
       }
       if (B.beam.t <= 0) B.beam = null;
-    } else if (!B.fired && !B.doze) {
+    } else if (!B.fired && !B.doze && !B.land) {
       B.atkT -= dt;
       if (B.atkT <= 0) startAttack();
     }
@@ -764,6 +887,16 @@ export function createBoss(ctx, key, protos) {
         c.s += c.vs * dt;
         const near = Math.abs(c.s - P.s) < 1.8;
         if (c.kind === 'puddle') continue;
+        if (c.kind === 'drone') {
+          if (c.dead) { c.y -= 14 * dt; continue; }
+          // sink to the car's height and slide into its lane
+          c.d += THREE.MathUtils.clamp(P.d - c.d, -3.5 * dt, 3.5 * dt); c.y += (1.8 - c.y) * Math.min(1, dt * 0.9);
+          if (Math.abs(c.s - P.s) < 2 && Math.abs(c.d - P.d) < 2 && Math.abs(P.y + 0.7 - c.y) < 1.8) {
+            c.dead = true; P.v *= 0.72; P.crashT = 0.4; P.shake = 0.5;
+            ctx.toast('배송 완료!', '드론이 택배를 던짐 · 감속', '#ffc83d'); ctx.blip(500, 120, 0.3, 'square', 0.14);
+          }
+          continue;
+        }
         if (c.kind === 'wave') { if (!c.hit && Math.abs(c.s - P.s) < 1.6) { c.hit = true; if (P.y - ctx.carGround(P.s, P.d) < 1.0) { P.v *= 0.6; P.crashT = 0.5; P.shake = 0.6; ctx.toast('예스 위 캔!', '메가폰 충격파에 맞음 · 점프로 넘어요', '#7ab8ff'); ctx.blip(120, 40, 0.4, 'sawtooth', 0.18); } else { ctx.gainXP(5); ctx.floatText('충격파 회피 +5 EXP'); } } continue; }
         if (c.kind === 'wall') { if (!c.hit && P.s > c.s) { c.hit = true; ctx.gainXP(5); ctx.floatText('과대광고 통과 +5 EXP'); } continue; }
         if (!c.hit && near && Math.abs(c.d - P.d) < 1.9 && P.y - ctx.carGround(P.s, P.d) < 1.8) {
@@ -848,7 +981,7 @@ export function createBoss(ctx, key, protos) {
       bm.visible = !!on; if (!on) return;
       // a sheet of light from the boss down to the far end of the stripe
       const sEnd = B.s - 10;
-      if (truck) mesh.userData.drone.userData.horn.getWorldPosition(tmp); else ctx.world(B.s, B.d + (ctx.LANES[i] - B.d) * 0.3, B.y, tmp);
+      if (truck) mesh.userData.drone.userData.horn.getWorldPosition(tmp); else if (shepherd) mesh.userData.eye.getWorldPosition(tmp); else ctx.world(B.s, B.d + (ctx.LANES[i] - B.d) * 0.3, B.y, tmp);
       ctx.world(sEnd, ctx.LANES[i], 0.2, tmp2);
       bm.position.copy(tmp).add(tmp2).multiplyScalar(0.5);
       const len = tmp.distanceTo(tmp2);
@@ -873,6 +1006,7 @@ export function createBoss(ctx, key, protos) {
       c.m.visible = true; ctx.world(c.s, c.d, c.y + (c.kind === 'invoice' ? Math.sin(time * 6 + c.spin) * 0.25 : 0), c.m.position);
       if (c.kind === 'wave') { c.m.rotation.set(0, ctx.frame(c.s).yaw, 0); c.m.scale.y = 1 + Math.sin(time * 20) * 0.15; continue; }
       if (c.kind === 'puddle') { c.m.rotation.set(-Math.PI / 2, 0, ctx.frame(c.s).yaw); continue; }
+      if (c.kind === 'drone') { c.m.rotation.set(c.dead ? time * 6 : 0.25, ctx.frame(c.s).yaw + Math.sin(time * 2 + c.spin) * 0.3, c.dead ? time * 4 : Math.sin(time * 3 + c.spin) * 0.12); continue; }
       c.m.rotation.y = ctx.frame(c.s).yaw;
       if (c.kind === 'invoice') { c.m.rotation.z = Math.sin(time * 4 + c.spin) * 0.35; c.m.rotation.x = -0.2 + Math.sin(time * 5 + c.spin) * 0.15; }
       if (c.kind === 'wall') c.m.children[0].material.opacity = 0.55 + Math.sin(time * 40) * 0.12 + (Math.random() < 0.04 ? -0.4 : 0);
@@ -896,7 +1030,7 @@ export function createBoss(ctx, key, protos) {
 
   function reset() {
     for (const c of B.cones) { ctx.scene.remove(c.m); if (c.q) ctx.removePuddle(c.q); }
-    Object.assign(B, { hp: def.hp, active: false, done: false, defeated: false, fleeing: false, telegraph: null, beam: null, phase: 1, atkT: 4, cones: [], coilHint: false, jumpHintAt: null, fired: null, wasFired: false });
+    Object.assign(B, { hp: def.hp, active: false, done: false, defeated: false, fleeing: false, land: null, landT: 4, telegraph: null, beam: null, phase: 1, atkT: 4, cones: [], coilHint: false, jumpHintAt: null, fired: null, wasFired: false });
     if (mesh.userData.holoMap) { mesh.userData.holoMat.map = mesh.userData.holoMap; mesh.userData.holoMat.needsUpdate = true; }
     if (mesh.userData.happy) { mesh.userData.eyeMat.map = mesh.userData.happy; mesh.userData.eyeMat.needsUpdate = true; }
     if (truck) { Object.assign(mesh.userData, home); mesh.userData.drone.visible = false; B.doze = null; B.dozeT = 7; }
@@ -917,10 +1051,19 @@ export function createBoss(ctx, key, protos) {
     ctx.world(sPos, d, y + Math.sin(time * 1.1) * 0.3, mesh.position);
     mesh.rotation.set(0.08, ctx.frame(sPos).yaw + 0.35, 0.05);
     for (const p of mesh.userData.pivots) p.rotation.y = time * 6;
-    if (mesh.userData.screen) { mesh.rotation.set(0.1, ctx.frame(sPos).yaw + 0.25 + yawOff, 0); mesh.userData.eyeMat.color.setScalar(1.0); mesh.userData.eyeMat.map = mesh.userData.happy; }
+    if (shepherd) { mesh.rotation.set(0.05, ctx.frame(sPos).yaw + yawOff, 0.04); mesh.userData.eyeMat.color.setRGB(3.2, 2.2, 0.8); for (const j of mesh.userData.jets) j.scale.y = 0.9 + Math.sin(time * 30) * 0.1; }
+    else if (mesh.userData.screen) { mesh.rotation.set(0.1, ctx.frame(sPos).yaw + 0.25 + yawOff, 0); mesh.userData.eyeMat.color.setScalar(1.0); mesh.userData.eyeMat.map = mesh.userData.happy; }
     else if (mesh.userData.eyeCol) { mesh.userData.eyeMat.color.copy(mesh.userData.eyeCol).multiplyScalar(6 + Math.sin(time * 4) * 2); mesh.rotation.set(0.12, ctx.frame(sPos).yaw + 0.2, 0); mesh.userData.ring.rotation.y = time * 0.5; mesh.userData.holo.lookAt(ctx.camera.position); }
     else mesh.userData.eyeMat.color.setRGB(6 + Math.sin(time * 4) * 2, 0.2, 0.25);
   }
 
-  return { B, update, sync, reset, fireCoil, posterPose, roofAt };
+  // things the space-stage cannon can shoot besides the weak point
+  function targets() {
+    return B.cones.filter((c) => c.kind === 'drone' && !c.dead).map((c) => ({ pos: c.m.position, r: 1.2, hit: (n) => {
+      c.hp -= n; if (c.hp > 0 || c.dead) return;
+      c.dead = true; ctx.addDoge(3); ctx.gainXP(4); ctx.floatText('드론 격추 +Ð3'); ctx.blip(300, 90, 0.25, 'square', 0.12);
+      for (let i = 0; i < 12; i++) ctx.puff(c.m.position, new THREE.Vector3((Math.random() - 0.5) * 10, Math.random() * 6, (Math.random() - 0.5) * 10), i % 2 ? '#ffb347' : '#ddd', 1.1, 0.5);
+    } }));
+  }
+  return { B, update, sync, reset, fireCoil, posterPose, roofAt, damage, targets };
 }

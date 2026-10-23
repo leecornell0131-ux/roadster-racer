@@ -173,7 +173,7 @@ function parcelCanvas(color, label) {
 }
 
 // ---------- traffic: parcel satellite (a cardboard box with wings) ----------
-function makeParcelSat(color, label) {
+export function makeParcelSat(color, label) {
   const g = new THREE.Group();
   const map = tex(parcelCanvas(color, label));
   const paint = new THREE.MeshStandardMaterial({ map, color: '#ffffff', roughness: 0.95 }); // keep its own colour: not named 'paint'
@@ -301,9 +301,15 @@ function buildTrains(k) {
 // ---------- Earth: NASA Blue Marble + Black Marble (public domain), clouds from noise, an atmosphere rim ----------
 const E_R = 1600, E_D = 1740, E_DIR = new THREE.Vector3(0.5, -0.78, -0.38).normalize();
 function buildEarth(k) {
+  const { earth, atmo } = makeEarth(k, E_R, new THREE.Vector3(-0.62, 0.33, -0.71));
+  earth.rotation.set(0.35, 2.6, 0.2);
+  k.scene.add(earth, atmo); live.earth = earth; live.atmo = atmo;
+}
+// Earth + atmosphere shell of radius R lit from sunDir (also the Moon stage's earthrise)
+export function makeEarth(k, E_R, sunDir) {
+  sunDir = sunDir.clone().normalize();
   const day = k.photo('earth_day.jpg', { rep: [1, 1] }), night = k.photo('earth_night.jpg', { rep: [1, 1] }), water = k.photo('earth_water.png', { srgb: false, rep: [1, 1] });
   for (const t of [day, night, water]) { t.wrapT = THREE.ClampToEdgeWrapping; t.anisotropy = 8; }
-  const sunDir = new THREE.Vector3(-0.62, 0.33, -0.71).normalize();
   const mat = new THREE.ShaderMaterial({
     uniforms: { day: { value: day }, night: { value: night }, water: { value: water }, sunDir: { value: sunDir }, time: { value: 0 } },
     vertexShader: `varying vec2 vUv; varying vec3 vN, vW, vO;
@@ -340,8 +346,7 @@ function buildEarth(k) {
     depthWrite: false, fog: false,
   });
   const earth = new THREE.Mesh(new THREE.SphereGeometry(E_R, 128, 64), mat);
-  earth.renderOrder = -10; earth.frustumCulled = false; earth.rotation.set(0.35, 2.6, 0.2);
-  k.scene.add(earth); live.earth = earth;
+  earth.renderOrder = -10; earth.frustumCulled = false;
   // atmosphere shell: additive glow around the limb
   const am = new THREE.ShaderMaterial({
     uniforms: { sunDir: { value: sunDir }, center: { value: new THREE.Vector3() } },
@@ -362,7 +367,8 @@ function buildEarth(k) {
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.BackSide,
   });
   const atmo = new THREE.Mesh(new THREE.SphereGeometry(E_R * 1.035, 96, 48), am);
-  atmo.renderOrder = -9; atmo.frustumCulled = false; k.scene.add(atmo); live.atmo = atmo;
+  atmo.renderOrder = -9; atmo.frustumCulled = false;
+  return { earth, atmo };
 }
 function buildMoonSun(k) {
   const moon = new THREE.Mesh(new THREE.SphereGeometry(80, 48, 24), new THREE.MeshStandardMaterial({ map: k.photo('moon_diff.jpg', { rep: [2, 1] }), color: '#d8d4cc', roughness: 1, fog: false }));
