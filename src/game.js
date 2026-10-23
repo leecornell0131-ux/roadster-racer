@@ -70,6 +70,9 @@ const maxCharges = () => Math.min(12, 2 + save.level + save.up.tank);
 
 // ---------- track geometry ----------
 const cx = ST.cx;
+// road height above sea level along the track; every y in track space is measured from it
+const elev = ST.elev || (() => 0);
+const elevSlope = (s) => elev(s + 0.5) - elev(s - 0.5);
 const _f = new THREE.Vector3(), _r = new THREE.Vector3();
 function frame(s) {
   const dx = (cx(s + 0.5) - cx(s - 0.5));
@@ -80,7 +83,7 @@ function frame(s) {
 }
 function world(s, d, y, out = new THREE.Vector3()) {
   const fr = frame(s);
-  return out.set(fr.x + fr.r.x * d, y, fr.z + fr.r.z * d);
+  return out.set(fr.x + fr.r.x * d, y + elev(s), fr.z + fr.r.z * d);
 }
 
 // ramps: {s0, len, dL, dR, h}
@@ -96,8 +99,14 @@ function carGround(s, d, yRef) {
   if (yRef == null) return g;
   return Math.max(g, roofAt(s, d - 0.7, yRef), roofAt(s, d, yRef), roofAt(s, d + 0.7, yRef));
 }
+// raised things you can drive along (bridge cables): { s0, s1, y(s), d(s), w(s) half width }
+const SURFACES = ST.surfaces || [];
+const surfaceAt = (s, d, yRef) => { for (const u of SURFACES) if (s > u.s0 && s < u.s1 && Math.abs(d - u.d(s)) < u.w(s) && yRef >= u.y(s) - 0.7) return u; return null; };
+// lateral reach: some stretches (a bridge) let you leave the deck when up high, over open water
+const reach = (s, y) => (ST.wide && s > ST.wide.s0 && s < ST.wide.s1 && y > 1.5 ? ST.wide.half : ROAD_HALF - 1.2);
 function groundAt(s, d) {
   for (const g of GAPS) if (s > g.s0 && s < g.s1) return -1e9;
+  if (ST.wide && s > ST.wide.s0 && s < ST.wide.s1 && Math.abs(d) > ROAD_HALF) return -1e9;
   const r = rampAt(s, d);
   return r ? r.h * (s - r.s0) / r.len : 0;
 }
@@ -109,6 +118,7 @@ function roofAt(s, d, yRef) {
     if (yRef >= r - 0.7 && r > top) top = r;
   }
   for (const c of CEILINGS) if (!c.holes && s > c.s0 && s < c.s1 && yRef >= c.y1 - 0.7 && c.y1 > top) top = c.y1; // overpass decks are floors from above
+  for (const u of SURFACES) if (s > u.s0 && s < u.s1 && Math.abs(d - u.d(s)) < u.w(s)) { const y = u.y(s); if (yRef >= y - 0.7 && y > top) top = y; }
   const b = boss?.roofAt?.(s, d, yRef);
   return b != null && b > top ? b : top;
 }
@@ -165,7 +175,8 @@ scene.add(sky);
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
         const i = y * W + x, o = ((ENV.envUpsideDown ? y : H - 1 - y) * W + x) * 4; // PNG rows run top-down, texture rows bottom-up
         const e = src[(i * 4 + 3) * 4], k = e ? Math.pow(2, e - 136) : 0;
-        f[o] = src[i * 16] * k; f[o + 1] = src[(i * 4 + 1) * 4] * k; f[o + 2] = src[(i * 4 + 2) * 4] * k; f[o + 3] = 1;
+        const cap = ENV.hdrMax ?? Infinity; // a very hot sun disc overflows the half-float bloom buffers (black frame)
+        f[o] = Math.min(cap, src[i * 16] * k); f[o + 1] = Math.min(cap, src[(i * 4 + 1) * 4] * k); f[o + 2] = Math.min(cap, src[(i * 4 + 2) * 4] * k); f[o + 3] = 1;
         const l = f[o] + f[o + 1] + f[o + 2]; if (l > best) { best = l; bi = o / 4; }
       }
       const tex = new THREE.DataTexture(f, W, H, THREE.RGBAFormat, THREE.FloatType);
@@ -412,7 +423,7 @@ function placeBuildings(kinds) {
     scene.add(inst);
   });
 }
-const kit = { THREE, scene, Q, IS_MOBILE, M, world, frame, ribbon, wall, crossWall, grid, photo, canvasTex, textTex, addBillboard, FACADES, facadeMat, placeBuildings, finishArch };
+const kit = { THREE, scene, Q, IS_MOBILE, M, world, frame, elev, ribbon, wall, crossWall, grid, photo, canvasTex, textTex, addBillboard, FACADES, facadeMat, placeBuildings, finishArch };
 
 // ---------- vehicles ----------
 // ---------- pickups ----------
@@ -476,7 +487,7 @@ const radioQueue = [];
 const radioFlags = new Set();
 
 function resetRace() {
-  Object.assign(P, { s: 0, d: 3, y: 0, v: 0, vy: 0, grounded: true, charges: maxCharges(), recharge: 0, fuel: AIR_FUEL, slope: 0, air: 0, boostT: 0, boostG: 30, crashT: 0, shake: 0, steerVis: 0, roll: 0, rollTo: 0, rollDir: 1, finished: false, coil: 0, bonkT: 0, roofRun: 0 });
+  Object.assign(P, { s: 0, d: 3, y: 0, v: 0, vy: 0, grounded: true, charges: maxCharges(), recharge: 0, fuel: AIR_FUEL, slope: 0, air: 0, boostT: 0, boostG: 30, crashT: 0, shake: 0, steerVis: 0, roll: 0, rollTo: 0, rollDir: 1, finished: false, coil: 0, bonkT: 0, roofRun: 0, lastG: 0, kG: 0, slipT: 0, slipV: 0 });
   boss?.reset();
   raceT = 0; penalty = 0; swarmDone = false;
   Object.assign(stats, { perfect: 0, coins: 0, xpGain: 0, dogeGain: 0, jumpsOver: 0, roofs: 0 });
@@ -491,13 +502,13 @@ const TRAFFIC = ST.traffic;
 const trafficProtos = {};
 const lodProtos = {}; // simplified copies for parked jams
 const trafficReady = Promise.all(Object.entries(TRAFFIC).map(async ([k, d]) => {
-  try { const pr = await loadCar(d.car); trafficProtos[k] = d.kit ? addSensorKit(pr) : pr; }
+  try { const pr = d.make ? d.make() : await loadCar(d.car); trafficProtos[k] = d.kit ? addSensorKit(pr) : pr; }
   catch (e) { console.warn('traffic model failed, using stand-in', k, e); }
   if (ST.jams && ST.jamMix?.[k]) try { const pr = await loadCar(d.car, true); lodProtos[k] = d.kit ? addSensorKit(pr) : pr; } catch { lodProtos[k] = trafficProtos[k]; }
 }));
 const JAMS = ST.jams || [];
 const inJam = (s, pad = 5) => JAMS.some(([a, b]) => s > a - pad && s < b + pad);
-const randLane = () => LANES[(Math.random() * LANES.length) | 0];
+const randLane = (type) => { const l = (type && TRAFFIC[type].lanes) || LANES; return l[(Math.random() * l.length) | 0]; };
 const TRAFFIC_MAX_S = ST.trafficMaxS ?? FINISH_S + 200;
 let jamFleets = [], swarmDone = false;
 let standIns = null;
@@ -531,7 +542,8 @@ function spawnTraffic() {
     let s = 180 + i * 85 + Math.random() * 40;
     if (s > TRAFFIC_MAX_S - 30) s -= 900;
     for (const [a, b] of JAMS) if (s > a - 40 && s < b + 5) s = b + 20 + Math.random() * 40;
-    addTraffic(type, s, randLane());
+    const rg = TRAFFIC[type].range; if (rg) s = rg[0] + Math.random() * (rg[1] - rg[0]);
+    addTraffic(type, s, randLane(type));
   });
   // parked jams: every lane bumper to bumper, a few holes; drawn as instanced fleets
   const mix = Object.entries(ST.jamMix || {}).filter(([k]) => trafficProtos[k]);
@@ -731,6 +743,15 @@ const fmtTime = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60
 
 // ---------- simulation ----------
 const RADIO_SCRIPT = ST.radio;
+const AVOID = [...RAMPS, ...(ST.blocks || [])]; // where traffic changes lane
+const PUDDLES = ST.puddles || [];
+// slope of whatever the car stands on (ramp or raised surface), on top of the road's own grade
+function slopeAt(s, d, y) {
+  const r = rampAt(s, d) || rampAt(s, d - 0.8) || rampAt(s, d + 0.8);
+  if (r) return r.h / r.len;
+  const u = surfaceAt(s, d, y + 0.3); if (u && Math.abs(y - u.y(s)) < 0.4) return u.y(s + 0.5) - u.y(s - 0.5);
+  return 0;
+}
 function step(dt) {
   raceT += dt;
   if (boss) { boss.update(dt); if (input.fireEdge) { input.fireEdge = false; if (!boss.fireCoil() && boss.B.active) floatText('코일 충전 중…'); } }
@@ -748,8 +769,11 @@ function step(dt) {
 
   // steering
   const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-  P.d += steer * (P.grounded ? 15 : 14) * dt * Math.min(1, 0.4 + P.v / 40);
-  P.d = THREE.MathUtils.clamp(P.d, -ROAD_HALF + 1.2, ROAD_HALF - 1.2);
+  const grip = P.slipT > 0 ? 0.25 : 1;
+  P.d += steer * (P.grounded ? 15 : 14) * grip * dt * Math.min(1, 0.4 + P.v / 40);
+  if (P.slipT > 0) { P.slipT -= dt; P.d += P.slipV * dt; P.slipV *= 1 - dt * 1.2; }
+  const lim = reach(P.s, P.y);
+  P.d = THREE.MathUtils.clamp(P.d, -lim, lim);
   P.steerVis += (steer - P.steerVis) * Math.min(1, dt * 8);
   P.s += P.v * dt;
 
@@ -760,7 +784,7 @@ function step(dt) {
   if (P.jumpBuf > 0 && (P.grounded || P.coyote > 0)) {
     P.jumpBuf = 0; P.coyote = 0;
     if (P.charges > 0) {
-      P.charges--; P.vy = Math.max(P.vy, 0) * (P.grounded ? 0 : 1) + JUMP_V + (P.grounded ? P.slope * P.v : 0); P.grounded = false; P.air = 0;
+      P.charges--; P.vy = P.grounded ? (elevSlope(P.s) + P.slope) * P.v + JUMP_V : Math.max(P.vy - elevSlope(P.s) * P.v, 0) + elevSlope(P.s) * P.v + JUMP_V; P.grounded = false; P.air = 0;
       // signature move from the Roadster demo: a full sideways twist in the air
       P.rollDir = steer !== 0 ? steer : -P.rollDir; P.rollTo = P.roll + Math.PI * 2 * P.rollDir;
       blip(160, 520, 0.25, 'triangle', 0.15);
@@ -776,11 +800,22 @@ function step(dt) {
 
   P.thrusting = false;
   const g = carGround(P.s, P.d, P.y);
+  const eS = elevSlope(P.s);
   if (P.grounded) {
     if (g < P.y - 0.3) { // left a ramp top or a broken bridge
-      P.grounded = false; P.vy = P.slope * P.v; P.air = 0;
+      P.grounded = false; P.air = 0;
     } else {
-      const r = rampAt(P.s, P.d) || rampAt(P.s, P.d - 0.8) || rampAt(P.s, P.d + 0.8); P.slope = r ? r.h / r.len : 0; P.y = g;
+      const kPrev = P.kG ?? eS;
+      P.slope = slopeAt(P.s, P.d, g); P.y = g; P.lastG = g;
+      P.kG = eS + P.slope; P.vy = P.kG * P.v;
+      // over a crest the ground drops away faster than gravity can follow: the car flies (SF hills)
+      if ((P.kG - kPrev) * P.v / dt < -G * 1.15 && P.v > 15) { P.grounded = false; P.air = 0; P.vy = kPrev * P.v; }
+    }
+    if (P.slipT <= 0) for (const q of PUDDLES) if (Math.abs(P.s - q.s) < q.l && Math.abs(P.d - q.d) < q.w) {
+      P.slipT = 0.9; P.slipV = (Math.random() < 0.5 ? -1 : 1) * (5 + Math.random() * 3); P.v *= 0.9;
+      toast('냉각수!', '데이터센터 냉각수에 미끄러짐', '#5ff0ff'); blip(500, 200, 0.3, 'sine', 0.12);
+      for (let i = 0; i < 10; i++) puff(world(P.s, P.d, 0.3), new THREE.Vector3((Math.random() - 0.5) * 8, 2 + Math.random() * 3, (Math.random() - 0.5) * 8), '#c8fbff', 1.1, 0.7);
+      break;
     }
     P.fuel = Math.min(AIR_FUEL, P.fuel + dt * 1.5);
   }
@@ -794,13 +829,14 @@ function step(dt) {
   if (!P.grounded) {
     P.air += dt;
     P.vy -= G * dt;
-    if (input.jump && P.vy < 3 && P.fuel > 0) {
-      P.thrusting = true; P.fuel -= dt; P.vy += 27 * dt; if (P.vy < -7) P.vy += 20 * dt;
+    const rv = P.vy - eS * P.v; // vertical speed relative to the road under you
+    if (input.jump && rv < 3 && P.fuel > 0) {
+      P.thrusting = true; P.fuel -= dt; P.vy += 27 * dt; if (rv < -7) P.vy += 20 * dt;
       if (Math.random() < 0.8) { const base = world(P.s, P.d + (Math.random() - 0.5) * 1.6, P.y); puff(base, new THREE.Vector3(0, -14, 0), '#cfefff', 0.6, 0.35); }
     }
-    P.y += P.vy * dt;
+    P.y += (P.vy - eS * P.v) * dt;
     if (P.y <= g) land(g);
-    if (P.y < -5.5) splash();
+    if (P.y < (ST.splashY?.(P.s) ?? -5.5)) splash();
   }
   // overpasses and sign gantries: solid overhead, except their holes
   P.bonkT -= dt;
@@ -818,7 +854,7 @@ function step(dt) {
     if (P.bonkT > 0) continue;
     const under = P.y + 1.3 - c.y0 < 0.9, face = P.s - P.v * dt * 1.5 < c.s0;
     if (!under && !face) continue; // came down onto it from above: the deck is a floor (roofAt)
-    P.bonkT = 0.5; P.shake = 0.7; P.v *= 0.45; P.vy = Math.min(P.vy, -3); P.grounded = false;
+    P.bonkT = 0.5; P.shake = 0.7; P.v *= 0.45; P.vy = Math.min(P.vy, eS * P.v - 3); P.grounded = false;
     if (under) P.y = c.y0 - 1.35; else P.s = c.s0 - 0.4; // underside: pushed down; face: stopped
     toast('쿵!', `${c.what}에 부딪힘`, '#ff3d6e'); blip(150, 40, 0.3, 'square', 0.18);
   }
@@ -838,8 +874,8 @@ function step(dt) {
       t.cool -= dt;
       t.s += t.v * dt;
       // lidar (and the robotaxi's cameras) see the ramp ahead and change lane
-      const ahead = RAMPS.find((r) => r.s0 - t.s > 0 && r.s0 - t.s < 45 && t.dT + 1.2 > r.dL && t.dT - 1.2 < r.dR);
-      if (ahead) { const free = LANES.filter((l) => !RAMPS.some((r) => Math.abs(r.s0 - ahead.s0) < 2 && l + 1.2 > r.dL && l - 1.2 < r.dR)); if (free.length) t.dT = free.reduce((a, b) => (Math.abs(b - t.d) < Math.abs(a - t.d) ? b : a)); }
+      const ahead = AVOID.find((r) => r.s0 - t.s > 0 && r.s0 - t.s < 45 && t.dT + 1.2 > r.dL && t.dT - 1.2 < r.dR);
+      if (ahead) { const free = LANES.filter((l) => !AVOID.some((r) => Math.abs(r.s0 - ahead.s0) < 2 && l + 1.2 > r.dL && l - 1.2 < r.dR)); if (free.length) t.dT = free.reduce((a, b) => (Math.abs(b - t.d) < Math.abs(a - t.d) ? b : a)); }
       else if (t.copy) {
         // copycats mirror your lane, a beat late
         t.copyT -= dt;
@@ -848,8 +884,9 @@ function step(dt) {
       t.d += THREE.MathUtils.clamp(t.dT - t.d, -6 * dt, 6 * dt);
       t.y = carGround(t.s, t.d);
       if (t.temp && t.s < P.s - 80) { t.dead = true; scene.remove(t.mesh); continue; }
-      if (t.s < P.s - 80 || t.s > TRAFFIC_MAX_S) {
-        t.s = Math.min(TRAFFIC_MAX_S - 20, P.s + 320 + Math.random() * 380); t.d = t.dT = randLane(); t.over = false; t.brakeT = 0; t.v = t.base;
+      const maxS = TRAFFIC[t.type].range?.[1] ?? TRAFFIC_MAX_S;
+      if (t.s < P.s - 80 || t.s > maxS) {
+        t.s = Math.min(maxS - 20, P.s + 320 + Math.random() * 380); t.d = t.dT = randLane(t.type); t.over = false; t.brakeT = 0; t.v = t.base;
         for (const [a, b] of JAMS) if (t.s > a - 40 && t.s < b + 5) t.s = b + 20 + Math.random() * 40;
         if (t.s < P.s + 120) t.s = P.s - 100; // nothing left ahead: park it behind
       }
@@ -896,9 +933,9 @@ function step(dt) {
   return fr0;
 }
 function land(g) {
-  const impact = -P.vy;
+  const impact = -(P.vy - elevSlope(P.s) * P.v);
   if (g < 0.5) P.roofRun = 0;
-  P.y = g; P.grounded = true; P.vy = 0;
+  P.y = g; P.grounded = true; P.lastG = g; P.slope = slopeAt(P.s, P.d, g); P.kG = elevSlope(P.s) + P.slope; P.vy = P.kG * P.v;
   const base = world(P.s, P.d, P.y);
   if (P.air > 0.45 && impact < 11.5) {
     stats.perfect++; P.boostT = Math.max(P.boostT, 0.9); P.boostG = Math.min(100, P.boostG + 20);
@@ -918,21 +955,22 @@ function withWa(w) {
   return batchim ? '과' : '와';
 }
 function crash(t) {
-  P.v = Math.min(P.v * 0.45, t.v + (t.parked ? 9 : 2)); P.s = t.s - t.hl - 2.3; // parked: enough left to hop onto it P.crashT = 0.8; P.shake = 0.8;
+  P.v = Math.min(P.v * 0.45, t.v + (t.parked ? 9 : 2)); P.s = t.s - t.hl - 2.3; // parked: enough left to hop onto it
+  P.crashT = 0.8; P.shake = 0.8;
   toast('쾅!', t.name + withWa(t.name) + ' 충돌', '#ff3d6e');
   blip(180, 40, 0.35, 'sawtooth', 0.2);
   const base = world(P.s + 2, P.d, 1);
   for (let i = 0; i < 18; i++) puff(base, new THREE.Vector3((Math.random() - 0.5) * 10, Math.random() * 5, (Math.random() - 0.5) * 10), i % 2 ? '#ffb347' : '#555', 0.9, 0.6);
 }
 function splash() {
-  const base = world(P.s, P.d, -6);
+  const base = world(P.s, P.d, (ST.splashY?.(P.s) ?? -5.5) - 0.5);
   for (let i = 0; i < 30; i++) puff(base, new THREE.Vector3((Math.random() - 0.5) * 10, 6 + Math.random() * 10, (Math.random() - 0.5) * 10), '#bfe9ff', 1.4, 1);
   const [big, small, line] = ST.lines.fall || ['추락!', '+3초', '다시 가자!'];
   toast(big, small, '#38f5ff');
   radio(line);
   blip(300, 60, 0.5, 'sine', 0.2);
   const gap = GAPS.find((g) => P.s > g.s0 - 60 && P.s < g.s1 + 60) || GAPS[0];
-  Object.assign(P, { s: gap ? gap.respawn : P.s - 100, y: 0, vy: 0, v: 52, grounded: true, charges: Math.max(P.charges, 1), shake: 0.4 });
+  Object.assign(P, { s: gap ? gap.respawn : P.s - (ST.respawnBack ?? 100), d: THREE.MathUtils.clamp(P.d, -ROAD_HALF + 1.2, ROAD_HALF - 1.2), y: 0, vy: 0, v: 52, grounded: true, lastG: 0, kG: undefined, charges: Math.max(P.charges, 1), shake: 0.4 });
   penalty += 3;
 }
 function collect(p) {
@@ -974,11 +1012,11 @@ let orbitT = 0, snapCam = false;
 function placeCar() {
   const fr = frame(P.s);
   world(P.s, P.d, P.y, car.position);
-  const pitch = P.grounded ? -Math.atan(P.slope) : -Math.atan2(P.vy, Math.max(P.v, 10)) * 0.8;
+  const pitch = P.grounded ? -Math.atan(P.slope + elevSlope(P.s)) : -Math.atan2(P.vy, Math.max(P.v, 10)) * 0.8;
   car.rotation.set(0, 0, 0);
   car.rotation.order = 'YXZ';
   car.rotation.y = fr.yaw - P.steerVis * 0.12;
-  car.rotation.x = -pitch * -1;
+  car.rotation.x = -pitch; // nose up on the way up (the car faces -z)
   car.rotation.z = -P.steerVis * 0.05 + P.roll;
   // roll around the body's centre (0.55 m up), not the tyre contact point
   const sr = Math.sin(P.roll), cr = 1 - Math.cos(P.roll);
@@ -1000,7 +1038,7 @@ function syncTraffic(time) {
     if (!t.mesh) continue;
     t.mesh.visible = Math.abs(t.s - P.s) < 380; if (!t.mesh.visible) continue;
     world(t.s, t.d, t.y, t.mesh.position);
-    t.mesh.rotation.y = frame(t.s).yaw;
+    t.mesh.rotation.order = 'YXZ'; t.mesh.rotation.set(Math.atan(elevSlope(t.s)), frame(t.s).yaw, 0);
     if (t.mesh.userData.pivot) t.mesh.userData.pivot.rotation.y = time * 5 + t.s;
     for (const w of t.mesh.userData.wheels) w.children[0].rotation.x = -t.s / w.userData.r;
     const braking = t.brakeT > 0;
@@ -1043,14 +1081,16 @@ function updateCamera(dt, time) {
   if (state === 'poster' || state === 'loading') {
     orbitT += dt * 0.18;
     const a = orbitT + 0.6;
-    camPos.set(car.position.x + Math.sin(a) * 9, 2.3 + Math.sin(orbitT * 0.7) * 0.6, car.position.z + Math.cos(a) * 9);
-    camera.position.copy(camPos); camera.lookAt(car.position.x, 0.9, car.position.z);
+    camPos.set(car.position.x + Math.sin(a) * 9, car.position.y + 2.3 + Math.sin(orbitT * 0.7) * 0.6, car.position.z + Math.cos(a) * 9);
+    camera.position.copy(camPos); camera.lookAt(car.position.x, car.position.y + 0.9, car.position.z);
     camera.fov = 48; camera.updateProjectionMatrix();
     return;
   }
   const speedK = P.v / 70;
-  tmpV.copy(car.position).addScaledVector(fr.f, -(8.5 + speedK * 2.5)); tmpV.y = Math.max(P.y * 0.7, 0) + 3.4 + speedK * 0.4;
-  lookV.copy(car.position).addScaledVector(fr.f, 10); lookV.y = P.y * 0.55 + 1.4;
+  // follow the car's height, but only part of the way up a jump (above where it last stood)
+  const lift = Math.max(0, P.y - (P.lastG || 0)), back = 8.5 + speedK * 2.5;
+  tmpV.copy(car.position).addScaledVector(fr.f, -back); tmpV.y = Math.max(elev(P.s), elev(P.s - back) - 1.5) + Math.max(P.y - lift * 0.3, 0) + 3.4 + speedK * 0.4;
+  lookV.copy(car.position).addScaledVector(fr.f, 10); lookV.y = elev(P.s + 10) + P.y - lift * 0.45 + 1.4;
   const k = snapCam ? 1 : Math.min(1, dt * 7);
   camPos.lerp(tmpV, k); camLook.lerp(lookV, snapCam ? 1 : Math.min(1, dt * 10)); snapCam = false;
   camera.position.copy(camPos);
@@ -1108,6 +1148,12 @@ function refreshSaveLine() { const b = save.bests[ST.id]; $('saveLine').textCont
 function stageUI() {
   const T = ST.text;
   $('pEyebrow').textContent = T.eyebrow; $('pTitle').textContent = T.title; $('pSub').textContent = T.sub;
+  // long names (SAN FRANCISCO) shrink until the longest word fits the column
+  const fitTitle = () => { const el = $('pTitle'); el.style.fontSize = ''; el.style.whiteSpace = 'nowrap'; const w = el.clientWidth; el.style.whiteSpace = '';
+    const words = T.title.split(' '); const probe = document.createElement('span'); probe.style.whiteSpace = 'nowrap'; el.textContent = ''; el.append(probe);
+    let worst = 0; for (const wd of words) { probe.textContent = wd; worst = Math.max(worst, probe.offsetWidth); } el.textContent = T.title;
+    if (worst > w && w > 0) el.style.fontSize = `${parseFloat(getComputedStyle(el).fontSize) * w / worst * 0.97}px`; };
+  fitTitle(); document.fonts?.ready.then(fitTitle); addEventListener('resize', fitTitle);
   $('pTip').innerHTML = T.tip; $('pTweet').textContent = T.tweet; $('pMeta').textContent = T.meta; $('loadTxt').textContent = T.load;
   $('hudStage').textContent = T.hud; $('rEyebrow').textContent = T.clear; $('rTitle').textContent = T.clearTitle;
   const i = ORDER.indexOf(ST), next = ORDER[i + 1];
@@ -1139,12 +1185,13 @@ function loop(now) {
   else if (state === 'finish') { P.v = Math.max(0, P.v - 30 * dt); P.s += P.v * dt; P.thrusting = false; }
   if (state !== 'loading') { placeCar(); syncTraffic(time); syncPickups(time); boss?.sync(time); }
   if (state === 'poster') posterStage(time);
+  ST.tick?.(time, camera);
   updatePuffs(dt); updateRadio(dt);
   if (toastT > 0) toastT -= dt;
   if (!window.__game?.frozen) updateCamera(dt, time);
   sky.position.copy(camera.position);
   const fr = frame(P.s || 0);
-  sun.position.copy(car.position).addScaledVector(SUN_DIR, 80); sun.position.y = 45; sun.target.position.copy(car.position);
+  sun.position.copy(car.position).addScaledVector(SUN_DIR, 80); sun.position.y = car.position.y + 45; sun.target.position.copy(car.position);
   if (state !== 'poster' && state !== 'loading') updateHUD();
   updateAudio();
   composer.render();
@@ -1161,7 +1208,7 @@ async function boot() {
   await carReady; await trafficReady;
   try {
     boss = createBoss({ scene, P, LANES, ROAD_HALF, world, frame, carGround, puff, toast, radio, floatText, blip, gainXP, $, camera, car, addTraffic, crash, traffic: () => traffic,
-      addDoge: (n) => { save.doge += n; stats.dogeGain += n; writeSaveSoon(); } }, ST.boss, trafficProtos);
+      addDoge: (n) => { n = Math.max(n, -save.doge); save.doge += n; stats.dogeGain += n; writeSaveSoon(); } }, ST.boss, trafficProtos);
   } catch (e) { console.warn('boss skipped', e); boss = null; }
   $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · Textures & HDRI: Poly Haven, ambientCG (CC0)';
   resetRace(); placeCar(); syncTraffic(0); syncPickups(0);

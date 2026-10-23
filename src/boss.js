@@ -3,7 +3,7 @@
 // or a jump attack from below. Everything game-side comes in through ctx so bosses stay data.
 import * as THREE from 'three';
 import { instance, addSensorKit } from './realcars.js';
-import { wheel } from './models.js';
+import { wheel, makeRTX5090 } from './models.js';
 
 const LANE_W = 6;
 
@@ -89,6 +89,56 @@ export function buildCloneTrailer(protos) {
   return g;
 }
 
+// ---------- the AGI Orb (stage 3) ----------
+// a chrome iris-scanning orb the size of a house, ringed by the GPUs it hoarded. The lens is the weak point.
+function holoTex(lines, color = '#b48cff', w = 1024, h = 256) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d');
+  x.textAlign = 'center'; x.textBaseline = 'middle'; x.shadowColor = color; x.shadowBlur = 26; x.fillStyle = '#efe6ff';
+  lines.forEach(([t, size], i) => { x.font = `900 ${size}px "Black Han Sans", "Noto Sans KR", sans-serif`; x.fillText(t, w / 2, h * (i + 0.5) / lines.length + 4); });
+  x.globalAlpha = 0.18; x.fillStyle = '#000'; for (let y = 0; y < h; y += 6) x.fillRect(0, y, w, 2); // scanlines
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+export function buildOrb() {
+  const g = new THREE.Group();
+  const R = 3.3;
+  const chrome = new THREE.MeshPhysicalMaterial({ color: '#d9dce2', metalness: 1, roughness: 0.07, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 1.5 });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(R, 64, 40), chrome); body.castShadow = true; g.add(body);
+  // seam and the black glass face around the lens (faces the chasing car, +z)
+  const seam = new THREE.Mesh(new THREE.TorusGeometry(R * 1.002, 0.035, 8, 96), new THREE.MeshStandardMaterial({ color: '#2a2c30', metalness: 0.8, roughness: 0.4 })); g.add(seam);
+  const faceGlass = new THREE.MeshPhysicalMaterial({ color: '#06070a', metalness: 0.2, roughness: 0.04, clearcoat: 1, envMapIntensity: 1.6 });
+  const face = new THREE.Mesh(new THREE.SphereGeometry(R * 1.004, 48, 24, 0, Math.PI * 2, 0, 0.62), faceGlass); face.rotation.x = Math.PI / 2; g.add(face);
+  const bezel = new THREE.Mesh(new THREE.TorusGeometry(R * Math.sin(0.62), 0.09, 10, 64), chrome); bezel.position.z = R * Math.cos(0.62); g.add(bezel);
+  // the iris: glowing rings around a black pupil
+  const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 0.7, 4), toneMapped: false });
+  const iris = new THREE.Mesh(new THREE.RingGeometry(0.42, 1.05, 64), eyeMat); iris.position.z = R + 0.02; g.add(iris);
+  const iris2 = new THREE.Mesh(new THREE.RingGeometry(1.18, 1.26, 64), eyeMat); iris2.position.z = R - 0.05; g.add(iris2);
+  const pupil = new THREE.Mesh(new THREE.CircleGeometry(0.42, 48), new THREE.MeshPhysicalMaterial({ color: '#000', roughness: 0.02, clearcoat: 1 })); pupil.position.z = R + 0.03; g.add(pupil);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 12), new THREE.MeshBasicMaterial({ visible: false })); eye.position.z = R; eye.name = 'eye'; g.add(eye);
+  // scanner light cone (its "iris scan")
+  const cone = new THREE.ConeGeometry(2.2, 14, 32, 1, true); cone.translate(0, -7, 0); cone.rotateX(-Math.PI / 2); cone.rotateY(Math.PI);
+  const scan = new THREE.Mesh(cone, new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 0.6, 3.2), transparent: true, opacity: 0.05, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+  scan.position.z = R; g.add(scan);
+  // anti-gravity halo underneath
+  const haloMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.1, 0.6, 3.2), toneMapped: false, transparent: true, opacity: 0.85 });
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(2.1, 0.12, 8, 64), haloMat); halo.rotation.x = Math.PI / 2; halo.position.y = -R - 0.6; g.add(halo);
+  const halo2 = halo.clone(); halo2.scale.setScalar(0.62); halo2.position.y = -R - 1.2; g.add(halo2);
+  // the hoard: a slow ring of graphics cards
+  const ring = new THREE.Group(); ring.name = 'gpuRing'; g.add(ring);
+  const card = makeRTX5090();
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2, c = card.clone();
+    c.scale.setScalar(1.7); c.position.set(Math.cos(a) * 6.2, Math.sin(a * 3) * 0.5, Math.sin(a) * 6.2); c.rotation.set(0.3, -a, 0.2);
+    ring.add(c);
+  }
+  // hype hologram
+  const holoMat = new THREE.MeshBasicMaterial({ map: holoTex([['AGI 다음 달 출시!', 150], ['진짜임 · 구독 $200/월', 72]]), transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+  holoMat.color.setScalar(1.6);
+  const holo = new THREE.Mesh(new THREE.PlaneGeometry(10, 2.5), holoMat); holo.position.set(0, R + 2.4, 0); g.add(holo);
+  const size = new THREE.Vector3(R * 2, R * 2, R * 2);
+  g.userData = { size, pivots: [], jets: [halo, halo2], eyeMat, eye, holo, holoMat, ring, scan, eyeCol: new THREE.Color(0.35, 0.17, 1), firedTex: holoTex([['해임됨', 170], ['이사회 결정 · 5초 후 복귀?', 70]], '#ff4a6a') };
+  return g;
+}
+
 export const BOSSES = {
   waymo: {
     name: '웨이모 마더십', sub: '라이다 47개 탑재', hp: 100, appearAt: 430, giveUpAt: 2420, hover: 4.6,
@@ -100,6 +150,20 @@ export const BOSSES = {
       half: '절반 남았어! 이제 콘을 막 뿌릴 거야.',
       win: '라이다가 47개여도 하늘에서 떨어지는 테슬라는 못 보네.',
       flee: '강 건너로 도망갔어… 다음엔 꼭 잡자.',
+    },
+  },
+  orb: {
+    name: '올트-맨의 AGI 오브', sub: '클로즈드AI · 홍채 스캔하면 AGI 다음 달에 드림', hp: 100, appearAt: 900, giveUpAt: 2960, hover: 7, orb: true,
+    xp: 380, doge: 200, need: [],
+    lines: {
+      intro: '올트-맨의 AGI 오브다! 구독료 청구서를 날려. 빨간 차선은 청구서 날아오는 자리야!',
+      coil: '코일 충전 완료! F(⚡)로 렌즈를 쏴. 자동 조준이야.',
+      jump: '저거 높이 떠 있지? 언덕 꼭대기나 경사로에서 날아서 들이받아!',
+      fired: '속보! 이사회가 올트-맨을 해임했대! 지금 내려앉았어, 5초 안에 두들겨!',
+      back: '…5초 만에 복귀. 직원들이 하트 이모지 700개 날렸대.',
+      half: '복귀하더니 서버랙까지 던진다. 빈 차선 찾아!',
+      win: '오브 박살! AGI는 다음 달에도 안 나오겠네.',
+      flee: '안개 속으로 도망갔어… 다음엔 꼭 잡자.',
     },
   },
   trailer: {
@@ -120,7 +184,8 @@ export function createBoss(ctx, key, protos) {
   const def = BOSSES[key];
   if (!def) return null;
   for (const k of def.need || ['waymo']) if (!protos[k]) throw new Error('boss needs model ' + k);
-  const mesh = def.ground ? buildCloneTrailer(protos) : buildWaymoMothership(protos.waymo);
+  const orb = !!def.orb;
+  const mesh = def.ground ? buildCloneTrailer(protos) : orb ? buildOrb() : buildWaymoMothership(protos.waymo);
   mesh.visible = false; ctx.scene.add(mesh);
   const size = mesh.userData.size;
   const ground = !!def.ground;
@@ -163,7 +228,41 @@ export function createBoss(ctx, key, protos) {
     for (const x of [-1, 1]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.1, 0.5), legMat); l.position.set(x, 0.45, 0); g.add(l); }
     return g;
   }
-  const makeDrop = ground ? makeTag : makeCone;
+  // the orb's ammunition: subscription invoices, hype walls, server racks
+  const invoiceTex = (() => {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 340; const x = c.getContext('2d');
+    x.fillStyle = '#fbfaf6'; x.fillRect(0, 0, 256, 340); x.fillStyle = '#7b4dff'; x.fillRect(0, 0, 256, 54);
+    x.fillStyle = '#fff'; x.font = '900 30px "Black Han Sans", sans-serif'; x.textAlign = 'center'; x.fillText('INVOICE', 128, 38);
+    x.fillStyle = '#222'; x.font = '700 22px "Noto Sans KR", sans-serif'; x.fillText('ClosedAI Pro 구독', 128, 96);
+    x.fillStyle = '#bbb'; for (let y = 120; y < 240; y += 18) x.fillRect(28, y, 200 - (y % 36) * 2, 7);
+    x.fillStyle = '#d81e2a'; x.font = '900 52px "Black Han Sans", sans-serif'; x.fillText('$200/월', 128, 300);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })();
+  const invoiceMat = new THREE.MeshStandardMaterial({ map: invoiceTex, roughness: 0.7, side: THREE.DoubleSide, emissive: '#ffffff', emissiveMap: invoiceTex, emissiveIntensity: 0.55 });
+  const invoiceGlow = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 0.8, 4), transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  function makeInvoice() {
+    const g = new THREE.Group();
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2), invoiceMat); p.castShadow = true; g.add(p);
+    const gl = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.7), invoiceGlow); gl.position.z = -0.02; g.add(gl);
+    return g;
+  }
+  const wallMat = new THREE.MeshBasicMaterial({ map: holoTex([['AGI 다음 달 출시!', 150], ['(이번엔 진짜)', 80]], '#9b7bff'), transparent: true, opacity: 0.8, depthWrite: false, toneMapped: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+  wallMat.color.setScalar(1.4);
+  function makeHoloWall() {
+    const g = new THREE.Group();
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(ctx.ROAD_HALF * 2, ctx.ROAD_HALF * 0.5), wallMat); p.position.y = ctx.ROAD_HALF * 0.25; g.add(p);
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(ctx.ROAD_HALF * 2, 0.08, 0.08), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 0.7, 4), toneMapped: false })); edge.position.y = 0.05; g.add(edge);
+    return g;
+  }
+  const rackMat = new THREE.MeshStandardMaterial({ color: '#16171b', metalness: 0.7, roughness: 0.35 });
+  const ledMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 3, 1.2), toneMapped: false });
+  function makeRack() {
+    const g = new THREE.Group();
+    const b = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2.1, 1.0), rackMat); b.position.y = 1.05; b.castShadow = true; g.add(b);
+    for (let i = 0; i < 7; i++) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.04, 0.02), ledMat); l.position.set(0, 0.3 + i * 0.26, 0.51); g.add(l); }
+    return g;
+  }
+  const makeDrop = ground ? makeTag : orb ? makeRack : makeCone;
 
   // lightning bolt for the coil shot
   const boltMat = new THREE.LineBasicMaterial({ color: new THREE.Color(1.5, 2.6, 4), toneMapped: false, transparent: true });
@@ -191,12 +290,21 @@ export function createBoss(ctx, key, protos) {
   }
   function damage(n, why) {
     if (!B.active || B.defeated) return;
+    if (B.fired) n = Math.round(n * 1.5);
     B.hp -= n; B.hurtT = 0.35; hud();
     ctx.floatText(`${why} -${n}`);
     ctx.blip(900, 200, 0.25, 'square', 0.16);
     mesh.userData.eye.getWorldPosition(tmp);
     for (let i = 0; i < 14; i++) ctx.puff(tmp, new THREE.Vector3((Math.random() - 0.5) * 18, Math.random() * 8, (Math.random() - 0.5) * 18), i % 2 ? '#ffb347' : '#ffe9a0', 1.4, 0.6);
-    if (B.phase === 1 && B.hp <= def.hp / 2) { B.phase = 2; ctx.radio(def.lines.half); }
+    if (B.phase === 1 && B.hp <= def.hp / 2) {
+      if (orb) {
+        if (!B.fired && !B.wasFired) {
+          B.wasFired = true; B.fired = { t: 5 }; B.telegraph = null; B.beam = null;
+          mesh.userData.holoMap ??= mesh.userData.holoMat.map; mesh.userData.holoMat.map = mesh.userData.firedTex; mesh.userData.holoMat.needsUpdate = true;
+          ctx.toast('이사회: 해임!', '5초 동안 무방비 · 데미지 1.5배', '#ff4a6a'); ctx.radio(def.lines.fired);
+        }
+      } else { B.phase = 2; ctx.radio(def.lines.half); }
+    }
     if (B.hp <= 0) {
       B.defeated = true; B.fallV = 0;
       ctx.toast('보스 격추!', `+${def.xp} EXP · Ð +${def.doge}`, '#3dff9a');
@@ -216,9 +324,26 @@ export function createBoss(ctx, key, protos) {
     return true;
   }
 
+  function spawnInvoices(lanes, sAt) {
+    for (const i of lanes) for (let k = 0; k < 2; k++) {
+      const m = makeInvoice(); ctx.scene.add(m);
+      B.cones.push({ kind: 'invoice', s: sAt - k * 7, d: ctx.LANES[i], y: 1.1, vy: 0, vs: Math.max(14, ctx.P.v * 0.45), m, hit: false, landed: true, spin: Math.random() * 6 });
+    }
+  }
   function startAttack() {
     const P = ctx.P;
     const nearLane = ctx.LANES.reduce((a, l, i) => (Math.abs(l - P.d) < Math.abs(ctx.LANES[a] - P.d) ? i : a), 0);
+    if (orb && B.phase === 1 && Math.random() < 0.35) {
+      // a hype wall across the road: harmless, but it hides the invoices behind it
+      const m = makeHoloWall(); ctx.scene.add(m);
+      const sW = B.s - 8;
+      B.cones.push({ kind: 'wall', s: sW, d: 0, y: 0, vy: 0, vs: Math.max(10, P.v * 0.35), m, hit: false, landed: true });
+      const hidden = new Set([nearLane, (Math.random() * NL) | 0]);
+      spawnInvoices([...hidden], sW + 10);
+      ctx.floatText('과대광고 홀로그램!');
+      B.atkT = 3.2;
+      return;
+    }
     if (B.phase === 2 && Math.random() < 0.45) {
       // drop: every lane but one (two free on a wide road)
       const free = new Set([(Math.random() * NL) | 0]); if (NL > 4) free.add((Math.random() * NL) | 0);
@@ -298,7 +423,19 @@ export function createBoss(ctx, key, protos) {
       const targetD = B.telegraph ? B.d : Math.sin(t * 0.45) * 5;
       B.d += (targetD - B.d) * Math.min(1, dt * 1.5);
       const hoverY = def.hover + Math.sin(t * 2.1) * 0.35;
-      B.y += (hoverY - B.y) * Math.min(1, dt * 1.5);
+      if (!B.fired) B.y += (hoverY - B.y) * Math.min(1, dt * 1.5);
+    }
+
+    // the board fires him: the orb goes dark and sinks for five seconds, then he's back
+    if (B.fired) {
+      B.fired.t -= dt;
+      B.y += (3.6 - B.y) * Math.min(1, dt * 3);
+      if (B.fired.t <= 0) {
+        B.fired = null; B.phase = 2; B.hp = Math.min(def.hp, B.hp + 12); hud();
+        mesh.userData.holoMat.map = mesh.userData.holoMap; mesh.userData.holoMat.needsUpdate = true;
+        ctx.toast('복귀!', '해임 5초 만에 CEO 복귀 · 체력 +12', '#b48cff'); ctx.radio(def.lines.back); ctx.radio(def.lines.half);
+        ctx.blip(200, 900, 0.6, 'sawtooth', 0.14); B.atkT = 1.2;
+      }
     }
 
     // coil charges on its own too
@@ -309,7 +446,11 @@ export function createBoss(ctx, key, protos) {
     if (B.telegraph) {
       B.telegraph.t -= dt;
       if (B.telegraph.t <= 0) {
-        if (ground) {
+        if (orb) {
+          spawnInvoices(B.telegraph.lanes, B.s - 4);
+          ctx.floatText('구독료 청구서 발송!'); ctx.blip(700, 300, 0.3, 'square', 0.12);
+          B.telegraph = null; B.atkT = B.phase === 2 ? 2.3 : 3.2;
+        } else if (ground) {
           // clones roll off the back ramp into the marked lanes
           for (const i of B.telegraph.lanes) ctx.addTraffic('dolphin', B.s - rearOff - 3, ctx.LANES[i], { v: Math.max(12, P.v * 0.55), temp: true, color: CLONE_COLOR, name: 'BYD 클론' });
           ctx.floatText('클론 투하!'); ctx.blip(400, 120, 0.35, 'square', 0.14);
@@ -327,13 +468,25 @@ export function createBoss(ctx, key, protos) {
         ctx.blip(200, 60, 0.4, 'square', 0.2);
       }
       if (B.beam.t <= 0) B.beam = null;
-    } else {
+    } else if (!B.fired) {
       B.atkT -= dt;
       if (B.atkT <= 0) startAttack();
     }
 
     // cones fall and sit on the road
     for (const c of B.cones) {
+      if (c.kind) {
+        c.s += c.vs * dt;
+        const near = Math.abs(c.s - P.s) < 1.8;
+        if (c.kind === 'wall') { if (!c.hit && P.s > c.s) { c.hit = true; ctx.gainXP(5); ctx.floatText('과대광고 통과 +5 EXP'); } continue; }
+        if (!c.hit && near && Math.abs(c.d - P.d) < 1.9 && P.y - ctx.carGround(P.s, P.d) < 1.8) {
+          c.hit = true; P.v *= 0.7; P.crashT = 0.4; P.shake = 0.45; ctx.addDoge(-10);
+          ctx.toast('구독료 자동결제!', '-Ð10 · 감속', '#b48cff'); ctx.blip(900, 300, 0.25, 'square', 0.14);
+          c.flyV = new THREE.Vector3((Math.random() - 0.5) * 6, 7, 0);
+        }
+        if (c.flyV) { c.flyV.y -= 20 * dt; c.y += c.flyV.y * dt; c.d += c.flyV.x * dt; c.s += (P.v - c.vs + 3) * dt; }
+        continue;
+      }
       if (!c.landed) { c.vy -= 30 * dt; c.y += c.vy * dt; const gy = ctx.carGround(c.s, c.d); if (c.y <= gy) { c.y = gy; c.landed = true; } }
       if (!c.hit && Math.abs(c.s - P.s) < 1.6 && Math.abs(c.d - P.d) < (ground ? 2.2 : 1.4)) {
         if (P.y - ctx.carGround(P.s, P.d) < 0.9) { c.hit = true; P.v *= 0.72; P.shake = 0.4; ctx.floatText(ground ? '가격 파괴!' : '콘 충돌!'); ctx.blip(300, 100, 0.2, 'square', 0.12); c.flyV = new THREE.Vector3((Math.random() - 0.5) * 8, 9, -8); }
@@ -383,10 +536,16 @@ export function createBoss(ctx, key, protos) {
     } else if (!B.defeated) { mesh.rotation.set(0, ctx.frame(B.s).yaw, Math.sin(time * 1.3) * 0.04); }
     else mesh.rotation.y = ctx.frame(B.s).yaw;
     for (const p of mesh.userData.pivots) p.rotation.y = time * 6;
-    for (const j of mesh.userData.jets) { j.scale.y = 0.8 + Math.sin(time * 30 + j.position.x) * 0.2; }
+    if (!orb) for (const j of mesh.userData.jets) { j.scale.y = 0.8 + Math.sin(time * 30 + j.position.x) * 0.2; }
     const eye = mesh.userData.eyeMat;
-    const flash = B.hurtT > 0 ? (Math.sin(time * 60) > 0 ? 8 : 2) : B.telegraph ? 6 + Math.sin(time * 30) * 2 : 4;
-    eye.color.setRGB(flash, 0.2, 0.25);
+    const flash = B.fired ? 0.4 : B.hurtT > 0 ? (Math.sin(time * 60) > 0 ? 8 : 2) : B.telegraph ? 6 + Math.sin(time * 30) * 2 : 4;
+    if (mesh.userData.eyeCol) eye.color.copy(mesh.userData.eyeCol).multiplyScalar(flash); else eye.color.setRGB(flash, 0.2, 0.25);
+    if (orb) {
+      mesh.userData.ring.rotation.y = time * 0.5; mesh.userData.ring.visible = !B.defeated;
+      mesh.userData.holo.position.y = 5.7 + Math.sin(time * 1.7) * 0.2; mesh.userData.holo.lookAt(ctx.camera.position);
+      mesh.userData.scan.material.opacity = B.fired ? 0 : 0.04 + (B.telegraph ? 0.06 : 0);
+      for (const j of mesh.userData.jets) j.material.opacity = B.fired ? 0.1 : 0.85;
+    }
     // telegraph stripes and beams
     stripes.forEach((st, i) => {
       const on = (B.telegraph && B.telegraph.lanes.includes(i)) || (B.beam && B.beam.lanes.includes(i));
@@ -410,7 +569,12 @@ export function createBoss(ctx, key, protos) {
       bm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       bm.scale.x = 1.4; bm.material.opacity = 0.5 * B.beam.t / 0.5;
     });
-    for (const c of B.cones) { c.m.visible = true; ctx.world(c.s, c.d, c.y, c.m.position); c.m.rotation.y = ctx.frame(c.s).yaw; if (c.flyV) c.m.rotation.x += 0.2; }
+    for (const c of B.cones) {
+      c.m.visible = true; ctx.world(c.s, c.d, c.y + (c.kind === 'invoice' ? Math.sin(time * 6 + c.spin) * 0.25 : 0), c.m.position); c.m.rotation.y = ctx.frame(c.s).yaw;
+      if (c.kind === 'invoice') { c.m.rotation.z = Math.sin(time * 4 + c.spin) * 0.35; c.m.rotation.x = -0.2 + Math.sin(time * 5 + c.spin) * 0.15; }
+      if (c.kind === 'wall') c.m.children[0].material.opacity = 0.55 + Math.sin(time * 40) * 0.12 + (Math.random() < 0.04 ? -0.4 : 0);
+      if (c.flyV) c.m.rotation.x += 0.2;
+    }
     // coil bolt from the car's roof to the eye
     if (boltT > 0) {
       boltT -= 1 / 60;
@@ -429,7 +593,8 @@ export function createBoss(ctx, key, protos) {
 
   function reset() {
     for (const c of B.cones) ctx.scene.remove(c.m);
-    Object.assign(B, { hp: def.hp, active: false, done: false, defeated: false, fleeing: false, telegraph: null, beam: null, phase: 1, atkT: 4, cones: [], coilHint: false, jumpHintAt: null });
+    Object.assign(B, { hp: def.hp, active: false, done: false, defeated: false, fleeing: false, telegraph: null, beam: null, phase: 1, atkT: 4, cones: [], coilHint: false, jumpHintAt: null, fired: null, wasFired: false });
+    if (mesh.userData.holoMap) { mesh.userData.holoMat.map = mesh.userData.holoMap; mesh.userData.holoMat.needsUpdate = true; }
     mesh.visible = false; mesh.rotation.set(0, 0, 0);
     end(); B.done = false;
   }
@@ -441,7 +606,8 @@ export function createBoss(ctx, key, protos) {
     ctx.world(sPos, d, y + Math.sin(time * 1.1) * 0.3, mesh.position);
     mesh.rotation.set(0.08, ctx.frame(sPos).yaw + 0.35, 0.05);
     for (const p of mesh.userData.pivots) p.rotation.y = time * 6;
-    mesh.userData.eyeMat.color.setRGB(6 + Math.sin(time * 4) * 2, 0.2, 0.25);
+    if (mesh.userData.eyeCol) { mesh.userData.eyeMat.color.copy(mesh.userData.eyeCol).multiplyScalar(6 + Math.sin(time * 4) * 2); mesh.rotation.set(0.12, ctx.frame(sPos).yaw + 0.2, 0); mesh.userData.ring.rotation.y = time * 0.5; mesh.userData.holo.lookAt(ctx.camera.position); }
+    else mesh.userData.eyeMat.color.setRGB(6 + Math.sin(time * 4) * 2, 0.2, 0.25);
   }
 
   return { B, update, sync, reset, fireCoil, posterPose, roofAt };
