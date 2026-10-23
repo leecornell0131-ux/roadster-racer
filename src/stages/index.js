@@ -4,6 +4,7 @@ import la from './la.js';
 import sf from './sf.js';
 import metaverse from './metaverse.js';
 import dc from './dc.js';
+import starbase from './starbase.js';
 
-export const ORDER = [austin, la, sf, metaverse, dc];
+export const ORDER = [austin, la, sf, metaverse, dc, starbase];
 export const STAGES = Object.fromEntries(ORDER.map((s) => [s.id, s]));

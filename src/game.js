@@ -747,6 +747,7 @@ const RADIO_SCRIPT = ST.radio;
 const AVOID = [...RAMPS, ...(ST.blocks || [])]; // where traffic changes lane
 const PUDDLES = [...(ST.puddles || [])]; // bosses can add more (sunscreen)
 const PADS = ST.pads || [];             // like-button jump pads
+const HAZARDS = ST.hazards || [];
 // slope of whatever the car stands on (ramp or raised surface), on top of the road's own grade
 function slopeAt(s, d, y) {
   const r = rampAt(s, d) || rampAt(s, d - 0.8) || rampAt(s, d + 0.8);
@@ -867,6 +868,14 @@ function step(dt) {
     toast('쿵!', `${c.what}에 부딪힘`, '#ff3d6e'); blip(150, 40, 0.3, 'square', 0.18);
   }
   if (ST.swarm && !swarmDone && P.s > ST.swarm.at) spawnSwarm();
+  // stage hazards the stage switches on and off (engine test fire): { s, l, dL, dR, h, active, text }
+  for (const hz of HAZARDS) {
+    hz.cd = (hz.cd || 0) - dt;
+    if (!hz.active || hz.cd > 0 || Math.abs(P.s - hz.s) > hz.l || P.d < hz.dL || P.d > hz.dR || P.y > (hz.h ?? 3)) continue;
+    hz.cd = 1; P.v *= 0.5; P.crashT = 0.6; P.shake = 0.8;
+    const [big, small, col] = hz.text || ['앗 뜨거!', '', '#ff6a1a']; toast(big, small, col); blip(120, 40, 0.4, 'sawtooth', 0.2);
+    for (let i = 0; i < 16; i++) puff(world(P.s, P.d, 0.8), new THREE.Vector3((Math.random() - 0.5) * 10, 3 + Math.random() * 5, (Math.random() - 0.5) * 10), i % 2 ? '#ff8a2a' : '#555', 1.3, 0.7);
+  }
 
   // traffic
   for (const t of traffic) {
@@ -994,7 +1003,8 @@ function finish() {
   P.finished = true; state = 'finish';
   const t = raceT + penalty;
   const bossWin = !!boss?.B.defeated;
-  const stars = 1 + (bossWin ? 1 : 0) + (t <= ST.stars.time || stats.perfect >= (ST.stars.perfect || 3) ? 1 : 0);
+  const stars = boss ? 1 + (bossWin ? 1 : 0) + (t <= ST.stars.time || stats.perfect >= (ST.stars.perfect || 3) ? 1 : 0)
+    : 1 + (t <= ST.stars.time ? 1 : 0) + (stats.perfect >= (ST.stars.perfect || 3) ? 1 : 0); // no boss: time and landings are a star each
   const prev = save.bests[ST.id];
   const best = prev && prev < t ? prev : t; save.bests[ST.id] = best;
   writeSave();
@@ -1008,10 +1018,11 @@ function finish() {
     $('rXp').textContent = `+${stats.xpGain}`;
     $('rLv').textContent = `LV ${save.level}`;
     $('rBoss').textContent = bossWin ? '격추' : '놓침';
+    $('rBoss').hidden = $('rBoss').previousElementSibling.hidden = !boss;
     $('rRoofs').textContent = stats.roofs;
     $('rRoofRow').hidden = !JAMS.length; $('rRoofRow2').hidden = !JAMS.length;
     $('results').hidden = false;
-  }, 900);
+  }, ST.finishDelay ?? 900);
 }
 
 // ---------- render sync ----------
@@ -1077,7 +1088,8 @@ function posterStage(time) {
 }
 function updateCamera(dt, time) {
   const fr = frame(P.s);
-  if (state === 'poster' && boss) {
+  if (state === 'finish' && ST.finishCam?.(camera, time)) return; // a stage's own ending (Starbase launch)
+  if (state === 'poster' && (boss || ST.poster?.cam)) {
     orbitT += dt * 0.05;
     const sway = Math.sin(orbitT) * 1.2;
     world(POSTER.s - PCAM.back, POSTER.d + PCAM.side + sway, PCAM.y, camPos);
@@ -1193,7 +1205,7 @@ function loop(now) {
   else if (state === 'finish') { P.v = Math.max(0, P.v - 30 * dt); P.s += P.v * dt; P.thrusting = false; }
   if (state !== 'loading') { placeCar(); syncTraffic(time); syncPickups(time); boss?.sync(time); }
   if (state === 'poster') posterStage(time);
-  ST.tick?.(time, camera);
+  ST.tick?.(time, camera, { state, P, car });
   updatePuffs(dt); updateRadio(dt);
   if (toastT > 0) toastT -= dt;
   if (!window.__game?.frozen) updateCamera(dt, time);
