@@ -196,6 +196,144 @@ export function buildHeadset() {
   return g;
 }
 
+// ---------- Uncle Joe's ice-cream truck + Air Force Won drone (stage 5) ----------
+// a step-van ice-cream truck blown up to boss size, a soft-serve cone on the roof as its weak point.
+// At half health a drone shaped like the presidential jet swoops in and docks above it.
+function truckLivery() {
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 512; const x = c.getContext('2d');
+  x.fillStyle = '#f7f5ef'; x.fillRect(0, 0, 1024, 512);
+  x.fillStyle = '#7ec8ea'; x.fillRect(0, 360, 1024, 152); x.fillStyle = '#f39ab8'; x.fillRect(0, 336, 1024, 24); x.fillStyle = '#1f4f9a'; x.fillRect(0, 496, 1024, 16);
+  // painted soft-serve on the side
+  x.fillStyle = '#e0a860'; x.beginPath(); x.moveTo(700, 330); x.lineTo(800, 330); x.lineTo(750, 470); x.fill();
+  x.strokeStyle = '#b07830'; x.lineWidth = 4; for (let i = 0; i < 6; i++) { x.beginPath(); x.moveTo(705 + i * 16, 330); x.lineTo(750 + i * 4, 460); x.stroke(); }
+  for (const [y, r] of [[300, 62], [240, 50], [190, 36], [150, 20]]) { const g = x.createRadialGradient(735, y - 10, 5, 750, y, r); g.addColorStop(0, '#ffffff'); g.addColorStop(1, '#f0e4d0'); x.fillStyle = g; x.beginPath(); x.ellipse(750, y, r, r * 0.55, 0, 0, Math.PI * 2); x.fill(); }
+  x.fillStyle = '#d81e2a'; x.font = '900 112px "Black Han Sans", sans-serif'; x.textAlign = 'left'; x.textBaseline = 'middle';
+  x.fillText('아이스크림 조', 50, 120);
+  x.fillStyle = '#1f4f9a'; x.font = '700 44px "Noto Sans KR", sans-serif';
+  x.fillText('규제 맛 · 서류 맛 · 바닐라', 56, 218); x.fillText('1972년부터 영업 중', 56, 276);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
+}
+function wordTex(text, color, w = 1024, h = 128, size = 84, bg = null) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d');
+  if (bg) { x.fillStyle = bg; x.fillRect(0, 0, w, h); }
+  x.font = `900 ${size}px "Chakra Petch", "Black Han Sans", sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = color; x.fillText(text, w / 2, h / 2 + 4);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function buildAF1Drone() {
+  const g = new THREE.Group();
+  const white = new THREE.MeshPhysicalMaterial({ color: '#f4f5f6', roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.1 });
+  const blue = new THREE.MeshPhysicalMaterial({ color: '#7aa6c8', roughness: 0.3, clearcoat: 1 });
+  const navy = new THREE.MeshPhysicalMaterial({ color: '#1d3557', roughness: 0.3, clearcoat: 1 });
+  const metal = new THREE.MeshStandardMaterial({ color: '#9aa0a8', metalness: 1, roughness: 0.3 });
+  const glass = new THREE.MeshPhysicalMaterial({ color: '#0c1218', roughness: 0.05, metalness: 0.3, clearcoat: 1 });
+  const L = 9.5, R = 0.78;
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(R, R, L, 32, 1, false, -Math.PI / 2, Math.PI), white); top.rotation.x = Math.PI / 2; g.add(top);
+  const bot = new THREE.Mesh(new THREE.CylinderGeometry(R, R, L, 32, 1, false, Math.PI / 2, Math.PI), blue); bot.rotation.x = Math.PI / 2; g.add(bot);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(R, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), white); nose.rotation.x = -Math.PI / 2; nose.scale.set(1, 2.1, 1); nose.position.z = -L / 2; g.add(nose);
+  const hump = new THREE.Mesh(new THREE.CapsuleGeometry(R * 0.62, 2.6, 8, 20), white); hump.rotation.x = Math.PI / 2; hump.position.set(0, R * 0.55, -L / 2 + 2.3); g.add(hump);  // the 747 upper deck
+  const tailc = new THREE.Mesh(new THREE.ConeGeometry(R, 2.4, 32), white); tailc.rotation.x = Math.PI / 2; tailc.position.z = L / 2 + 1.2; g.add(tailc);
+  const cock = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.18, 0.4), glass); cock.position.set(0, R * 1.0, -L / 2 - 0.2); cock.rotation.x = 0.4; g.add(cock);
+  // cheat line and windows
+  for (const sx of [-1, 1]) {
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(L + 1.5, 0.16), navy); line.position.set(sx * (R + 0.005), -0.08, 0.4); line.rotation.y = sx * Math.PI / 2; g.add(line);
+    const lab = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 0.55), new THREE.MeshBasicMaterial({ map: wordTex('AIR FORCE WON', '#1d3557'), transparent: true }));
+    lab.position.set(sx * (R + 0.01), 0.36, -0.6); lab.rotation.y = sx * Math.PI / 2; g.add(lab);
+  }
+  // wings, tailplane, fin (swept)
+  const wingShape = new THREE.Shape(); wingShape.moveTo(0, 0); wingShape.lineTo(5.2, 2.4); wingShape.lineTo(5.2, 3.2); wingShape.lineTo(0, 2.6); wingShape.lineTo(0, 0);
+  const wingGeo = new THREE.ExtrudeGeometry(wingShape, { depth: 0.14, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.04, bevelSegments: 2 });
+  for (const sx of [-1, 1]) {
+    const w = new THREE.Mesh(wingGeo, white); w.rotation.x = Math.PI / 2; w.scale.x = sx; w.position.set(0, -0.35, -1.4); g.add(w);
+    const tp = new THREE.Mesh(wingGeo, white); tp.rotation.x = Math.PI / 2; tp.scale.set(sx * 0.42, 0.42, 1); tp.position.set(0, 0.1, L / 2); g.add(tp);
+    // engines under the wing
+    for (const k of [1.8, 3.6]) { const e = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.22, 1.2, 20), metal); e.rotation.x = Math.PI / 2; e.position.set(sx * k, -0.75, -1.2 + k * 0.45); g.add(e); }
+  }
+  const fin = new THREE.Mesh(wingGeo, blue); fin.rotation.set(0, -Math.PI / 2, Math.PI / 2); fin.scale.set(0.5, 0.62, 1); fin.position.set(0.07, 0.4, L / 2 - 0.4); g.add(fin);
+  // it's a drone: four lift rotors on outriggers
+  const pivots = [];
+  for (const [x, z] of [[-3.4, -3.2], [3.4, -3.2], [-3.4, 3.6], [3.4, 3.6]]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(Math.abs(x), 0.12, 0.2), metal); arm.position.set(x / 2, 0.55, z); g.add(arm);
+    const duct = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.1, 8, 32), navy); duct.rotation.x = Math.PI / 2; duct.position.set(x, 0.6, z); g.add(duct);
+    const pv = new THREE.Group(); pv.position.set(x, 0.6, z); g.add(pv); pivots.push(pv);
+    for (let i = 0; i < 3; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.03, 0.16), metal); b.rotation.y = i * Math.PI / 3; pv.add(b); }
+  }
+  // the megaphone it shouts through, slung under the nose
+  const horn = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.18, 1.6, 24, 1, true), new THREE.MeshPhysicalMaterial({ color: '#e8e8ea', metalness: 0.3, roughness: 0.3, side: THREE.DoubleSide }));
+  horn.rotation.x = -Math.PI / 2; horn.position.set(0, -1.05, -L / 2 + 0.6); g.add(horn);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 0.3, 0.3), toneMapped: false });
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 10), eyeMat); eye.position.set(0, -0.2, -L / 2 - 1.3); g.add(eye);
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  g.userData = { pivots, eye, eyeMat, horn };
+  return g;
+}
+export function buildIceTruck() {
+  const g = new THREE.Group();
+  const K = 1.5, L = 7.6 * K, W = 2.5 * K;
+  const paint = new THREE.MeshPhysicalMaterial({ color: '#f7f5ef', roughness: 0.32, clearcoat: 0.8, clearcoatRoughness: 0.15 });
+  const livery = new THREE.MeshPhysicalMaterial({ map: truckLivery(), roughness: 0.35, clearcoat: 0.8 });
+  const chrome = new THREE.MeshPhysicalMaterial({ color: '#d8dce2', metalness: 1, roughness: 0.15 });
+  const dark = new THREE.MeshStandardMaterial({ color: '#1b1c20', roughness: 0.7 });
+  const glass = new THREE.MeshPhysicalMaterial({ color: '#10161c', roughness: 0.04, metalness: 0.2, clearcoat: 1, envMapIntensity: 1.4 });
+  const box = (w, h, d, x, y, z, m) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = b.receiveShadow = true; g.add(b); return b; };
+  const zCab = -L / 2 + 1.6 * K;                            // cab/box boundary
+  // chassis + bumpers
+  box(W - 0.2, 0.5 * K, L - 0.4, 0, 0.55 * K, 0, dark);
+  box(W + 0.1, 0.3 * K, 0.3, 0, 0.55 * K, -L / 2 + 0.05, chrome); box(W + 0.1, 0.3 * K, 0.3, 0, 0.55 * K, L / 2 - 0.05, chrome);
+  // the box body: livery on the flanks
+  const bodyH = 2.45 * K, bodyY = 0.8 * K + bodyH / 2, bodyL = L / 2 - zCab;
+  box(W, bodyH, bodyL, 0, bodyY, zCab + bodyL / 2, paint);
+  for (const sx of [-1, 1]) {
+    const side = new THREE.Mesh(new THREE.PlaneGeometry(bodyL - 0.1, bodyH - 0.1), livery); side.position.set(sx * (W / 2 + 0.01), bodyY, zCab + bodyL / 2); side.rotation.y = sx * Math.PI / 2; g.add(side);
+  }
+  // serving window with a striped awning (right side, the kerb side)
+  const win = box(0.06, 0.9 * K, 2.6 * K, W / 2 + 0.03, bodyY + 0.25 * K, zCab + bodyL * 0.42, glass);
+  const awnTex = (() => { const c = document.createElement('canvas'); c.width = 256; c.height = 64; const x = c.getContext('2d'); for (let i = 0; i < 8; i++) { x.fillStyle = i % 2 ? '#ffffff' : '#e8466e'; x.fillRect(i * 32, 0, 32, 64); } const tt = new THREE.CanvasTexture(c); tt.colorSpace = THREE.SRGBColorSpace; return tt; })();
+  const awn = new THREE.Mesh(new THREE.PlaneGeometry(2.9 * K, 0.9), new THREE.MeshStandardMaterial({ map: awnTex, side: THREE.DoubleSide, roughness: 0.7 }));
+  awn.position.set(W / 2 + 0.35, bodyY + 0.85 * K, win.position.z); awn.rotation.set(0, Math.PI / 2, 0); awn.rotateX(-0.9); g.add(awn);
+  // the cab: lower roof, big windshield, round headlights
+  const cabH = 1.95 * K;
+  box(W, cabH, zCab + L / 2, 0, 0.8 * K + cabH / 2, (zCab - L / 2) / 2, paint);
+  const ws = box(W - 0.3, 0.9 * K, 0.05, 0, 0.8 * K + cabH - 0.55 * K, -L / 2 - 0.02, glass); ws.rotation.x = -0.12;
+  for (const sx of [-1, 1]) {
+    box(0.05, 0.7 * K, 1.0 * K, sx * (W / 2 + 0.02), 0.8 * K + cabH - 0.5 * K, -L / 2 + 0.9 * K, glass);
+    const hl = new THREE.Mesh(new THREE.CylinderGeometry(0.2 * K, 0.2 * K, 0.08, 24), new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 2.8, 2.2), toneMapped: false })); hl.rotation.x = Math.PI / 2; hl.position.set(sx * (W / 2 - 0.4), 1.05 * K, -L / 2 - 0.04); g.add(hl);
+  }
+  box(W * 0.6, 0.45 * K, 0.06, 0, 1.0 * K, -L / 2 - 0.03, chrome); // grille
+  // rear: doors, tail lights, a "STOP" arm folded on the side
+  const tail = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.5, 0.15, 0.2), toneMapped: false }); tail.name = 'tail';
+  for (const sx of [-1, 1]) { const tl = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.5, 0.05), tail); tl.position.set(sx * (W / 2 - 0.3), 1.3 * K, L / 2 + 0.02); g.add(tl); }
+  // the rear doors you chase: menu art and a warning
+  const rc = document.createElement('canvas'); rc.width = 512; rc.height = 640; const rx = rc.getContext('2d');
+  rx.fillStyle = '#f7f5ef'; rx.fillRect(0, 0, 512, 640); rx.fillStyle = '#7ec8ea'; rx.fillRect(0, 470, 512, 170); rx.fillStyle = '#f39ab8'; rx.fillRect(0, 450, 512, 20);
+  rx.fillStyle = '#d81e2a'; rx.font = '900 64px "Black Han Sans", sans-serif'; rx.textAlign = 'center'; rx.fillText('아이스크림 조', 256, 84);
+  rx.fillStyle = '#e0a860'; rx.beginPath(); rx.moveTo(196, 330); rx.lineTo(316, 330); rx.lineTo(256, 440); rx.fill();
+  for (const [y, r] of [[300, 72], [236, 56], [184, 40], [146, 22]]) { rx.fillStyle = '#ffffff'; rx.strokeStyle = '#e8d8c0'; rx.lineWidth = 4; rx.beginPath(); rx.ellipse(256, y, r, r * 0.55, 0, 0, Math.PI * 2); rx.fill(); rx.stroke(); }
+  rx.fillStyle = '#1f4f9a'; rx.font = '700 34px "Noto Sans KR", sans-serif'; rx.fillText('오늘의 맛: 규제 소프트콘', 256, 530);
+  rx.fillStyle = '#d81e2a'; rx.font = '900 40px "Black Han Sans", sans-serif'; rx.fillText('어린이 보호 · 천천히', 256, 600);
+  const rt = new THREE.CanvasTexture(rc); rt.colorSpace = THREE.SRGBColorSpace;
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.2, bodyH - 0.2), new THREE.MeshPhysicalMaterial({ map: rt, roughness: 0.35, clearcoat: 0.8 })); back.position.set(0, bodyY, L / 2 + 0.03); g.add(back);
+  // wheels
+  for (const z of [-L / 2 + 1.25 * K, L / 2 - 1.5 * K]) for (const x of [-W / 2 + 0.25, W / 2 - 0.25]) {
+    const w = wheel({ r: 0.52 * K, width: 0.36 * K, rim: '#e8e8ea', spokes: 8, rimR: 0.3 * K }); w.position.set(x, 0.52 * K, z); w.name = 'wheel'; w.userData.r = 0.52 * K; g.add(w);
+  }
+  // roof: speakers playing the chime, and the giant soft-serve cone (weak point)
+  const roofY = 0.8 * K + bodyH;
+  for (const sx of [-1, 1]) { const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.12, 0.9, 20, 1, true), chrome); sp.rotation.z = sx * Math.PI / 2; sp.position.set(sx * 0.9, 0.8 * K + cabH + 0.3, -L / 2 + 0.9 * K); g.add(sp); }
+  const coneG = new THREE.Group(); coneG.position.set(0, roofY, zCab + bodyL * 0.45); g.add(coneG);
+  const waffle = new THREE.Mesh(new THREE.ConeGeometry(0.95, 2.6, 28, 1, true), new THREE.MeshStandardMaterial({ color: '#d39a52', roughness: 0.75 })); waffle.rotation.x = Math.PI; waffle.position.y = 1.3; coneG.add(waffle);
+  const cream = new THREE.MeshPhysicalMaterial({ color: '#fbf6ec', roughness: 0.45, sheen: 1, sheenColor: new THREE.Color('#fff8ee'), clearcoat: 0.3 });
+  [[2.75, 1.05], [3.35, 0.85], [3.85, 0.62], [4.25, 0.38]].forEach(([y, r]) => { const t = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.5, 16, 40), cream); t.rotation.x = Math.PI / 2; t.position.y = y; coneG.add(t); });
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.5, 16), cream); tip.position.y = 4.65; coneG.add(tip);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.3, 0.5), toneMapped: false, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false });
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(1.5, 20, 14), eyeMat); eye.position.y = 3.2; eye.scale.y = 1.6; coneG.add(eye);
+  // the drone that joins in phase 2
+  const drone = buildAF1Drone(); drone.position.set(0, roofY + 8, 0); drone.visible = false; g.add(drone);
+  const size = new THREE.Vector3(W, roofY + 4.8, L);
+  g.userData = { size, pivots: drone.userData.pivots, jets: [], eyeMat, eye, holo: coneG, cone: coneG, drone, droneY: roofY + 4.2, eyeCol: new THREE.Color(0.35, 0.1, 0.18), rear: L / 2, front: L / 2,
+    roofs: [{ z0: -L / 2 + 0.2, z1: zCab, top: 0.8 * K + cabH }, { z0: zCab, z1: L / 2 - 0.1, top: roofY }] };
+  return g;
+}
+
 export const BOSSES = {
   waymo: {
     name: '웨이모 마더십', sub: '라이다 47개 탑재', hp: 100, appearAt: 430, giveUpAt: 2420, hover: 4.6,
@@ -235,6 +373,20 @@ export const BOSSES = {
       flee: '로그아웃해버렸어… 다음엔 꼭 잡자.',
     },
   },
+  icecream: {
+    name: '아이스크림 조의 트럭', sub: '+ 버락 오바바의 에어포스 원 드론', hp: 130, appearAt: 950, giveUpAt: 3020, ground: true, truck: true,
+    xp: 480, doge: 260, need: [],
+    bump: '아이스크림 트럭에 부딪힘', stompText: '트럭 지붕을 밟았다', dropHit: '규제 서류 폭탄!',
+    lines: {
+      intro: '아이스크림 조의 트럭이다! 지붕 위 소프트콘이 약점이야. 서류 폭탄 떨어지는 차선은 피해!',
+      coil: '코일 충전 완료! F(⚡)로 콘을 쏴. 자동 조준이야.',
+      jump: '경사로에서 날아서 트럭 지붕에 착지하면 스톰프야!',
+      doze: '어… 운전하다 졸았어! 지금 지붕에 올라타!',
+      half: '하늘에서 에어포스 원 드론 합류! 연비 레이저랑 메가폰 충격파 조심. 충격파는 점프로 넘어!',
+      win: '트럭이 녹아버렸어. 아이스크림이니까.',
+      flee: '국회의사당 쪽으로 도망갔어… 다음엔 꼭 잡자.',
+    },
+  },
   trailer: {
     name: '클론 트레일러', sub: 'BYD 왕회장 전용 · 돌핀 무한 복제', hp: 110, appearAt: 1880, giveUpAt: 3080, ground: true,
     xp: 320, doge: 160, need: ['bus', 'dolphin'],
@@ -254,7 +406,8 @@ export function createBoss(ctx, key, protos) {
   if (!def) return null;
   for (const k of def.need || ['waymo']) if (!protos[k]) throw new Error('boss needs model ' + k);
   const orb = !!def.orb, lizard = !!def.lizard;
-  const mesh = def.ground ? buildCloneTrailer(protos) : orb ? buildOrb() : lizard ? buildHeadset() : buildWaymoMothership(protos.waymo);
+  const truck = !!def.truck;
+  const mesh = truck ? buildIceTruck() : def.ground ? buildCloneTrailer(protos) : orb ? buildOrb() : lizard ? buildHeadset() : buildWaymoMothership(protos.waymo);
   mesh.visible = false; ctx.scene.add(mesh);
   const size = mesh.userData.size;
   const ground = !!def.ground;
@@ -333,7 +486,27 @@ export function createBoss(ctx, key, protos) {
   }
   const sunTex = (() => { const c = document.createElement('canvas'); c.width = 128; c.height = 256; const x = c.getContext('2d'); const g = x.createRadialGradient(64, 128, 10, 64, 128, 64); g.addColorStop(0, 'rgba(255,255,255,0.95)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.scale(1, 2); x.beginPath(); x.arc(64, 64, 62, 0, Math.PI * 2); x.fill(); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const sunMat = new THREE.MeshStandardMaterial({ map: sunTex, transparent: true, depthWrite: false, roughness: 0.1, color: '#fffaf0', emissive: '#fff4e0', emissiveIntensity: 0.25 });
-  const makeDrop = ground ? makeTag : orb ? makeRack : makeCone;
+  // stacks of regulations tied in red tape (the truck lobs them into lanes)
+  const paperMat = new THREE.MeshStandardMaterial({ color: '#f3f0e6', roughness: 0.85 });
+  const tapeMat = new THREE.MeshStandardMaterial({ color: '#c81e2a', roughness: 0.5, emissive: '#5a0008', emissiveIntensity: 0.4 });
+  function makePaper() {
+    const g = new THREE.Group();
+    for (let i = 0; i < 3; i++) { const p = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.42, 1.4), paperMat); p.position.y = 0.21 + i * 0.43; p.rotation.y = (Math.random() - 0.5) * 0.3; p.castShadow = true; g.add(p); }
+    for (const r of [0, Math.PI / 2]) { const tp = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.34, 0.16), tapeMat); tp.position.y = 0.66; tp.rotation.y = r; tp.scale.x = r ? 0.74 : 1; g.add(tp); }
+    return g;
+  }
+  // the megaphone shockwave: a ring of sound across the whole road; jump over it
+  const waveTex = (() => { const c = document.createElement('canvas'); c.width = 512; c.height = 128; const x = c.getContext('2d'); const gr = x.createLinearGradient(0, 0, 0, 128); gr.addColorStop(0, 'rgba(120,200,255,0)'); gr.addColorStop(0.5, 'rgba(160,220,255,0.9)'); gr.addColorStop(1, 'rgba(120,200,255,0.2)'); x.fillStyle = gr; x.fillRect(0, 0, 512, 128); x.font = '900 64px "Black Han Sans", sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = 'rgba(255,255,255,0.95)'; x.fillText('YES WE CAN', 256, 70); const tt = new THREE.CanvasTexture(c); tt.colorSpace = THREE.SRGBColorSpace; return tt; })();
+  const waveMat = new THREE.MeshBasicMaterial({ map: waveTex, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+  waveMat.color.setScalar(1.6);
+  function makeWave() {
+    const g = new THREE.Group();
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(ctx.ROAD_HALF * 2, 1.5), waveMat); p.position.y = 0.75; g.add(p);
+    const r = new THREE.Mesh(new THREE.BoxGeometry(ctx.ROAD_HALF * 2, 0.06, 0.4), new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 2.2, 3.4), toneMapped: false })); r.position.y = 0.05; g.add(r);
+    return g;
+  }
+  const makeDrop = truck ? makePaper : ground ? makeTag : orb ? makeRack : makeCone;
+  const home = { eye: mesh.userData.eye, eyeMat: mesh.userData.eyeMat, eyeCol: mesh.userData.eyeCol };
 
   // lightning bolt for the coil shot
   const boltMat = new THREE.LineBasicMaterial({ color: new THREE.Color(1.5, 2.6, 4), toneMapped: false, transparent: true });
@@ -349,6 +522,7 @@ export function createBoss(ctx, key, protos) {
     B.active = true; mesh.visible = true; B.s = ctx.P.s + 120; B.d = 0; B.y = def.hover + 14;
     ctx.$('bossName').innerHTML = `${def.name}<small>${def.sub}</small>`;
     if (ground) { B.s = ctx.P.s + rearOff + 120; B.y = 0; B.d = ctx.LANES[(NL / 2) | 0]; }
+    if (truck) { Object.assign(mesh.userData, home); mesh.userData.drone.visible = false; B.dozeT = 7; }
     ctx.$('bossBar').hidden = false; ctx.$('coilRow').hidden = false; ctx.$('fireBtn').hidden = false; document.querySelector('.speed').classList.add('boss');
     ctx.toast(def.name.toUpperCase(), '보스 출현!', '#ff2a3a'); ctx.radio(def.lines.intro);
     ctx.blip(120, 60, 0.8, 'sawtooth', 0.18);
@@ -361,7 +535,7 @@ export function createBoss(ctx, key, protos) {
   }
   function damage(n, why) {
     if (!B.active || B.defeated) return;
-    if (B.fired) n = Math.round(n * 1.5);
+    if (B.fired || B.doze) n = Math.round(n * 1.5);
     B.hp -= n; B.hurtT = 0.35; hud();
     ctx.floatText(`${why} -${n}`);
     ctx.blip(900, 200, 0.25, 'square', 0.16);
@@ -376,6 +550,7 @@ export function createBoss(ctx, key, protos) {
         }
       } else {
         B.phase = 2; ctx.radio(def.lines.half);
+        if (truck) { const dr = mesh.userData.drone; dr.visible = true; B.dock = 0; B.doze = null; mesh.userData.eye = dr.userData.eye; mesh.userData.eyeMat = dr.userData.eyeMat; mesh.userData.eyeCol = new THREE.Color(1, 0.12, 0.12); ctx.toast('에어포스 원 드론 합류!', '연비 레이저 · 메가폰 충격파', '#7ab8ff'); }
         if (lizard) { mesh.userData.eyeMat.map = mesh.userData.lizard; mesh.userData.eyeMat.needsUpdate = true; ctx.toast('렙틸리언 정체 발각!', '혀 날름 공격 주의', '#7dff5a'); B.glitchT = 1.2; }
       }
     }
@@ -435,6 +610,13 @@ export function createBoss(ctx, key, protos) {
       B.atkT = 3.2;
       return;
     }
+    if (truck && B.phase === 2 && Math.random() < 0.4) {
+      const m = makeWave(); ctx.scene.add(m);
+      B.cones.push({ kind: 'wave', s: B.s - rearOff - 2, d: 0, y: 0, vy: 0, vs: Math.max(8, P.v - 16), m, hit: false, landed: true });
+      ctx.floatText('예스 위 캔!'); ctx.blip(140, 420, 0.6, 'sawtooth', 0.16);
+      B.atkT = 2.8;
+      return;
+    }
     if (B.phase === 2 && Math.random() < 0.45) {
       // drop: every lane but one (two free on a wide road)
       const free = new Set([(Math.random() * NL) | 0]); if (NL > 4) free.add((Math.random() * NL) | 0);
@@ -490,7 +672,12 @@ export function createBoss(ctx, key, protos) {
     const t = performance.now() / 1000;
     if (ground) {
       // drive ahead, rear 18-28 m in front of the car, changing lanes now and then
-      B.gap = rearOff + 17 + Math.sin(t * 0.6) * 4;
+      B.gap = B.doze ? rearOff + 8 : rearOff + 17 + Math.sin(t * 0.6) * 4;
+      // the driver nods off now and then: no attacks, slows down, takes extra damage
+      if (truck && B.phase === 1) {
+        if (B.doze) { B.doze.t -= dt; if (Math.random() < dt * 3) ctx.floatText('Zzz…'); if (B.doze.t <= 0) { B.doze = null; B.dozeT = 10 + Math.random() * 4; ctx.floatText('번쩍!'); } }
+        else if ((B.dozeT = (B.dozeT ?? 7) - dt) <= 0 && !B.telegraph) { B.doze = { t: 3.4 }; ctx.toast('졸음 운전!', '3.4초 무방비 · 데미지 1.5배', '#7ab8ff'); ctx.radio(def.lines.doze); }
+      }
       const prevS = B.s;
       B.s += P.v * dt + (P.s + B.gap - B.s) * Math.min(1, dt * 1.2);
       B.v = (B.s - prevS) / dt;
@@ -504,7 +691,7 @@ export function createBoss(ctx, key, protos) {
       const rear = B.s - rearOff, front = B.s + frontOff;
       if (P.s > rear - 2.2 && P.s < front && Math.abs(P.d - B.d) < size.x / 2 + 0.9) {
         const top = roofAt(P.s, P.d, 99);
-        if (P.y < top - 0.6 && P.s < rear + 1) { P.s = rear - 2.3; P.v = Math.min(P.v, (B.v || P.v) * 0.6); P.crashT = 0.6; P.shake = 0.7; if (B.bumpT <= 0 || B.bumpT == null) { ctx.toast('쾅!', '트레일러에 부딪힘', '#ff3d6e'); ctx.blip(160, 40, 0.3, 'sawtooth', 0.18); } B.bumpT = 0.6; }
+        if (P.y < top - 0.6 && P.s < rear + 1) { P.s = rear - 2.3; P.v = Math.min(P.v, (B.v || P.v) * 0.6); P.crashT = 0.6; P.shake = 0.7; if (B.bumpT <= 0 || B.bumpT == null) { ctx.toast('쾅!', def.bump || '트레일러에 부딪힘', '#ff3d6e'); ctx.blip(160, 40, 0.3, 'sawtooth', 0.18); } B.bumpT = 0.6; }
       }
       B.bumpT = (B.bumpT || 0) - dt;
     } else {
@@ -541,6 +728,13 @@ export function createBoss(ctx, key, protos) {
           spawnInvoices(B.telegraph.lanes, B.s - 4);
           ctx.floatText('구독료 청구서 발송!'); ctx.blip(700, 300, 0.3, 'square', 0.12);
           B.telegraph = null; B.atkT = B.phase === 2 ? 2.3 : 3.2;
+        } else if (truck && B.phase === 1) {
+          // regulation bombs lobbed over the back into the marked lanes
+          for (const i of B.telegraph.lanes) for (let k = 0; k < 2; k++) { const m = makeDrop(); ctx.scene.add(m); B.cones.push({ s: B.s - rearOff - 3 - k * 7, d: ctx.LANES[i], y: 4.5, vy: 3, m, hit: false, landed: false }); }
+          ctx.floatText('규제 서류 폭탄!'); ctx.blip(500, 150, 0.35, 'square', 0.14);
+          B.telegraph = null; B.atkT = 3.0;
+        } else if (truck) {
+          B.beam = { lanes: B.telegraph.lanes, t: 0.5, hit: false }; B.telegraph = null; ctx.blip(1200, 80, 0.45, 'sawtooth', 0.16);
         } else if (ground) {
           // clones roll off the back ramp into the marked lanes
           for (const i of B.telegraph.lanes) ctx.addTraffic('dolphin', B.s - rearOff - 3, ctx.LANES[i], { v: Math.max(12, P.v * 0.55), temp: true, color: CLONE_COLOR, name: 'BYD 클론' });
@@ -555,11 +749,11 @@ export function createBoss(ctx, key, protos) {
       const ds = B.s - P.s;
       if (!B.beam.hit && inLane && ds > 0 && ds < STRIPE_LEN + 4 && P.y - ground < 1.3) {
         B.beam.hit = true; P.v *= 0.55; P.crashT = 0.6; P.shake = 0.6;
-        if (lizard) ctx.toast('혀 날름!', '렙틸리언 혀에 붙잡힘', '#7dff5a'); else ctx.toast('장애물 감지!', '라이다에 걸려 급정거', '#ff3d6e');
+        if (lizard) ctx.toast('혀 날름!', '렙틸리언 혀에 붙잡힘', '#7dff5a'); else if (truck) ctx.toast('연비 규제 레이저!', '리터당 50km 미달 · 급감속', '#7ab8ff'); else ctx.toast('장애물 감지!', '라이다에 걸려 급정거', '#ff3d6e');
         ctx.blip(200, 60, 0.4, 'square', 0.2);
       }
       if (B.beam.t <= 0) B.beam = null;
-    } else if (!B.fired) {
+    } else if (!B.fired && !B.doze) {
       B.atkT -= dt;
       if (B.atkT <= 0) startAttack();
     }
@@ -570,6 +764,7 @@ export function createBoss(ctx, key, protos) {
         c.s += c.vs * dt;
         const near = Math.abs(c.s - P.s) < 1.8;
         if (c.kind === 'puddle') continue;
+        if (c.kind === 'wave') { if (!c.hit && Math.abs(c.s - P.s) < 1.6) { c.hit = true; if (P.y - ctx.carGround(P.s, P.d) < 1.0) { P.v *= 0.6; P.crashT = 0.5; P.shake = 0.6; ctx.toast('예스 위 캔!', '메가폰 충격파에 맞음 · 점프로 넘어요', '#7ab8ff'); ctx.blip(120, 40, 0.4, 'sawtooth', 0.18); } else { ctx.gainXP(5); ctx.floatText('충격파 회피 +5 EXP'); } } continue; }
         if (c.kind === 'wall') { if (!c.hit && P.s > c.s) { c.hit = true; ctx.gainXP(5); ctx.floatText('과대광고 통과 +5 EXP'); } continue; }
         if (!c.hit && near && Math.abs(c.d - P.d) < 1.9 && P.y - ctx.carGround(P.s, P.d) < 1.8) {
           c.hit = true; P.v *= 0.7; P.crashT = 0.4; P.shake = 0.45; ctx.addDoge(-10);
@@ -581,7 +776,7 @@ export function createBoss(ctx, key, protos) {
       }
       if (!c.landed) { c.vy -= 30 * dt; c.y += c.vy * dt; const gy = ctx.carGround(c.s, c.d); if (c.y <= gy) { c.y = gy; c.landed = true; } }
       if (!c.hit && Math.abs(c.s - P.s) < 1.6 && Math.abs(c.d - P.d) < (ground ? 2.2 : 1.4)) {
-        if (P.y - ctx.carGround(P.s, P.d) < 0.9) { c.hit = true; P.v *= 0.72; P.shake = 0.4; ctx.floatText(ground ? '가격 파괴!' : '콘 충돌!'); ctx.blip(300, 100, 0.2, 'square', 0.12); c.flyV = new THREE.Vector3((Math.random() - 0.5) * 8, 9, -8); }
+        if (P.y - ctx.carGround(P.s, P.d) < 0.9) { c.hit = true; P.v *= 0.72; P.shake = 0.4; ctx.floatText(def.dropHit || (ground ? '가격 파괴!' : '콘 충돌!')); ctx.blip(300, 100, 0.2, 'square', 0.12); c.flyV = new THREE.Vector3((Math.random() - 0.5) * 8, 9, -8); }
       }
       if (c.hit && c.flyV) { c.flyV.y -= 30 * dt; c.y += c.flyV.y * dt; c.d += c.flyV.x * dt; c.s += (P.v + 6) * dt; }
     }
@@ -596,7 +791,7 @@ export function createBoss(ctx, key, protos) {
       if (B.jumpCd <= 0 && top > 2 && P.y - top < 0.25 && P.vy <= 0.5) {
         B.jumpCd = 1.4; damage(22, '스톰프');
         P.vy = 11; P.grounded = false; P.y = top + 0.05; P.air = 0;
-        ctx.toast('스톰프!', '트레일러를 밟았다', '#ffc83d');
+        ctx.toast('스톰프!', def.stompText || '트레일러를 밟았다', '#ffc83d');
       }
     } else if (B.jumpCd <= 0 && !P.grounded && Math.abs(ds) < size.z / 2 + 1.5 && Math.abs(B.d - P.d) < size.x / 2 + 0.8 && P.y + 1.2 > B.y - 0.6) {
       B.jumpCd = 1.6; damage(22, '점프 어택');
@@ -613,7 +808,8 @@ export function createBoss(ctx, key, protos) {
     if (Math.abs(d - B.d) > size.x / 2) return null;
     const z = B.s - s; // local z (backward positive)
     let top = null;
-    if (z > -frontOff && z < -2) top = 3.35;                 // bus roof
+    if (mesh.userData.roofs) { for (const r of mesh.userData.roofs) if (z > r.z0 && z < r.z1) top = r.top; }
+    else if (z > -frontOff && z < -2) top = 3.35;            // bus roof
     else if (z > -1.5 && z < rearOff - 3.4) top = 4.75;       // clones on the top deck
     return top != null && yRef >= top - 0.7 ? top : null;
   }
@@ -652,7 +848,7 @@ export function createBoss(ctx, key, protos) {
       bm.visible = !!on; if (!on) return;
       // a sheet of light from the boss down to the far end of the stripe
       const sEnd = B.s - 10;
-      ctx.world(B.s, B.d + (ctx.LANES[i] - B.d) * 0.3, B.y, tmp);
+      if (truck) mesh.userData.drone.userData.horn.getWorldPosition(tmp); else ctx.world(B.s, B.d + (ctx.LANES[i] - B.d) * 0.3, B.y, tmp);
       ctx.world(sEnd, ctx.LANES[i], 0.2, tmp2);
       bm.position.copy(tmp).add(tmp2).multiplyScalar(0.5);
       const len = tmp.distanceTo(tmp2);
@@ -661,6 +857,13 @@ export function createBoss(ctx, key, protos) {
       bm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       bm.scale.x = 1.4; bm.material.opacity = 0.5 * B.beam.t / 0.5;
     });
+    if (truck && mesh.userData.drone.visible) {
+      const dr = mesh.userData.drone; B.dock = Math.min(1, (B.dock ?? 1) + 1 / 120);
+      const e = 1 - (1 - B.dock) ** 3;
+      dr.position.y = mesh.userData.droneY + 2 + (1 - e) * 40 + Math.sin(time * 1.6) * 0.35; dr.position.z = (1 - e) * -30;
+      dr.rotation.set(0.04 + (B.beam ? 0.12 : 0), 0, Math.sin(time * 1.1) * 0.06);
+      for (const p of mesh.userData.pivots) p.rotation.y = time * 14;
+    }
     if (lizard) {
       const tg = mesh.userData.tongue; tg.visible = !!B.beam;
       if (B.beam) { const k = 1 - B.beam.t / 0.5; tg.scale.set(1, 6 + 22 * Math.sin(Math.min(1, k * 1.6) * Math.PI), 1); tg.rotation.set(Math.PI / 2 + 0.35, 0, 0); tg.position.set(0, -1.4, 2.2); }
@@ -668,6 +871,7 @@ export function createBoss(ctx, key, protos) {
     }
     for (const c of B.cones) {
       c.m.visible = true; ctx.world(c.s, c.d, c.y + (c.kind === 'invoice' ? Math.sin(time * 6 + c.spin) * 0.25 : 0), c.m.position);
+      if (c.kind === 'wave') { c.m.rotation.set(0, ctx.frame(c.s).yaw, 0); c.m.scale.y = 1 + Math.sin(time * 20) * 0.15; continue; }
       if (c.kind === 'puddle') { c.m.rotation.set(-Math.PI / 2, 0, ctx.frame(c.s).yaw); continue; }
       c.m.rotation.y = ctx.frame(c.s).yaw;
       if (c.kind === 'invoice') { c.m.rotation.z = Math.sin(time * 4 + c.spin) * 0.35; c.m.rotation.x = -0.2 + Math.sin(time * 5 + c.spin) * 0.15; }
@@ -695,6 +899,7 @@ export function createBoss(ctx, key, protos) {
     Object.assign(B, { hp: def.hp, active: false, done: false, defeated: false, fleeing: false, telegraph: null, beam: null, phase: 1, atkT: 4, cones: [], coilHint: false, jumpHintAt: null, fired: null, wasFired: false });
     if (mesh.userData.holoMap) { mesh.userData.holoMat.map = mesh.userData.holoMap; mesh.userData.holoMat.needsUpdate = true; }
     if (mesh.userData.happy) { mesh.userData.eyeMat.map = mesh.userData.happy; mesh.userData.eyeMat.needsUpdate = true; }
+    if (truck) { Object.assign(mesh.userData, home); mesh.userData.drone.visible = false; B.doze = null; B.dozeT = 7; }
     mesh.visible = false; mesh.rotation.set(0, 0, 0);
     end(); B.done = false;
   }
@@ -702,6 +907,12 @@ export function createBoss(ctx, key, protos) {
   // movie-poster pose for the loading screen: looming over the street, eye blazing
   function posterPose(sPos, d, y, time, yawOff = 0) {
     mesh.visible = true;
+    if (truck) {
+      ctx.world(sPos, d, y, mesh.position); mesh.rotation.set(0, ctx.frame(sPos).yaw + 0.12 + yawOff, 0);
+      const dr = mesh.userData.drone; dr.visible = true; dr.position.y = mesh.userData.droneY + 2.2 + Math.sin(time * 1.4) * 0.3; dr.rotation.set(0.06, 0, Math.sin(time * 0.9) * 0.05);
+      for (const p of mesh.userData.pivots) p.rotation.y = time * 14;
+      home.eyeMat.color.setScalar(1.2 + Math.sin(time * 3) * 0.3); return;
+    }
     if (ground) { ctx.world(sPos, d, y, mesh.position); mesh.rotation.set(0, ctx.frame(sPos).yaw + 0.12, 0); mesh.userData.eyeMat.color.setRGB(6 + Math.sin(time * 4) * 2, 0.25, 0.2); return; }
     ctx.world(sPos, d, y + Math.sin(time * 1.1) * 0.3, mesh.position);
     mesh.rotation.set(0.08, ctx.frame(sPos).yaw + 0.35, 0.05);
