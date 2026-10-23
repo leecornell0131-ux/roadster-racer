@@ -25,7 +25,7 @@ const ST = (() => {
 function goStage(id) { try { localStorage.setItem(STAGE_KEY, id); } catch {} location.reload(); }
 
 // ---------- tuning ----------
-const G = 32;
+const G = ST.gravity ?? 32;            // m/s², low on the space stages
 const ROAD_HALF = ST.roadHalf;
 const LANES = ST.lanes;
 const GAPS = ST.gaps || [];
@@ -332,7 +332,7 @@ const flat0 = () => 0;
 function buildWorld() {
   // road, broken by any gaps
   let a = -120;
-  for (const g of [...GAPS, { s0: FINISH_S + 260 }]) {
+  if (!ROAD.hide) for (const g of [...GAPS, { s0: FINISH_S + 260 }]) {
     const m = new THREE.Mesh(ribbon(a, g.s0, -ROAD_HALF, ROAD_HALF, 3, flat0, 24), M.road);
     m.receiveShadow = true; scene.add(m); a = g.s1;
   }
@@ -423,7 +423,7 @@ function placeBuildings(kinds) {
     scene.add(inst);
   });
 }
-const kit = { THREE, scene, Q, IS_MOBILE, M, world, frame, elev, ribbon, wall, crossWall, grid, photo, canvasTex, textTex, addBillboard, FACADES, facadeMat, placeBuildings, finishArch };
+const kit = { THREE, scene, sky, Q, IS_MOBILE, M, world, frame, elev, ribbon, wall, crossWall, grid, photo, canvasTex, textTex, addBillboard, FACADES, facadeMat, placeBuildings, finishArch };
 
 // ---------- vehicles ----------
 // ---------- pickups ----------
@@ -871,7 +871,7 @@ function step(dt) {
   // stage hazards the stage switches on and off (engine test fire): { s, l, dL, dR, h, active, text }
   for (const hz of HAZARDS) {
     hz.cd = (hz.cd || 0) - dt;
-    if (!hz.active || hz.cd > 0 || Math.abs(P.s - hz.s) > hz.l || P.d < hz.dL || P.d > hz.dR || P.y > (hz.h ?? 3)) continue;
+    if (!hz.active || hz.cd > 0 || Math.abs(P.s - hz.s) > hz.l || P.d < hz.dL || P.d > hz.dR || P.y > (hz.h ?? 3) || P.y + 1.3 < (hz.y0 ?? -9)) continue;
     hz.cd = 1; P.v *= 0.5; P.crashT = 0.6; P.shake = 0.8;
     const [big, small, col] = hz.text || ['앗 뜨거!', '', '#ff6a1a']; toast(big, small, col); blip(120, 40, 0.4, 'sawtooth', 0.2);
     for (let i = 0; i < 16; i++) puff(world(P.s, P.d, 0.8), new THREE.Vector3((Math.random() - 0.5) * 10, 3 + Math.random() * 5, (Math.random() - 0.5) * 10), i % 2 ? '#ff8a2a' : '#555', 1.3, 0.7);
@@ -1231,7 +1231,7 @@ async function boot() {
       addPuddle: (q) => PUDDLES.push(q), removePuddle: (q) => { const i = PUDDLES.indexOf(q); if (i >= 0) PUDDLES.splice(i, 1); },
       addDoge: (n) => { n = Math.max(n, -save.doge); save.doge += n; stats.dogeGain += n; writeSaveSoon(); } }, ST.boss, trafficProtos);
   } catch (e) { console.warn('boss skipped', e); boss = null; }
-  $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · Textures & HDRI: Poly Haven, ambientCG (CC0)';
+  $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · Textures & HDRI: Poly Haven, ambientCG (CC0) · Earth & stars: NASA Blue Marble, Black Marble, SVS Deep Star Maps';
   resetRace(); placeCar(); syncTraffic(0); syncPickups(0);
   state = 'poster';
   $('startBtn').disabled = false; $('startBtn').textContent = '출발';

@@ -231,6 +231,9 @@ function groundY(s, d) {
   const beach = d > 0 ? -3 * THREE.MathUtils.smoothstep(d, shore - 30, shore + 40) : 0;
   return 0.08 + dune + lagoon + beach;
 }
+// the Starship / Super Heavy models, for the later stages that fly with them
+export function shipKit(k) { MAT ??= mats(k); return { makeShip, makeBooster, R, BOOSTER_H, SHIP_H, MAT }; }
+
 function build(k) {
   live.k = k; MAT = mats(k);
   const rand = rnd(6);
