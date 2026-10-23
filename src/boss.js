@@ -396,6 +396,90 @@ export function buildShepherd() {
   g.userData = { size, pivots: [], jets: [flame], eyeMat, eye, shepherd: true, eyeCol: new THREE.Color(1, 0.72, 0.28) };
   return g;
 }
+
+// ---------- AGI Overlord (stage 9, Mars) ----------
+// three tech bosses pooled their GPUs into one mecha: a torso of server racks and graphics cards, two
+// arms, and three heads that fight over the controls: Alt-Man's orb, Lizard Zuck's headset and
+// Amo-Day's safety shield. The head in control glows and is the weak point.
+export function buildOverlord() {
+  const g = new THREE.Group();
+  const chrome = new THREE.MeshPhysicalMaterial({ color: '#c9ccd3', metalness: 1, roughness: 0.15, clearcoat: 1, envMapIntensity: 1.4 });
+  const dark = new THREE.MeshStandardMaterial({ color: '#17181c', metalness: 0.8, roughness: 0.35 });
+  const led = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 3, 1.4), toneMapped: false });
+  const core = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 1.2, 0.5), toneMapped: false });
+  const torso = new THREE.Mesh(new RoundedBoxGeometry(10, 7.5, 5.5, 4, 0.8), dark); torso.position.y = 7; g.add(torso);
+  const chest = new THREE.Mesh(new RoundedBoxGeometry(7.6, 5.2, 0.6, 3, 0.25), chrome); chest.position.set(0, 7.4, 2.75); g.add(chest);
+  // rack fronts with blinking LEDs across the chest
+  for (let r = 0; r < 6; r++) for (const x of [-2.6, 2.6]) { const l = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.06, 0.04), led); l.position.set(x, 5.4 + r * 0.72, 3.08); g.add(l); }
+  const reactor = new THREE.Mesh(new THREE.CircleGeometry(1.1, 32), core); reactor.position.set(0, 7.4, 3.07); g.add(reactor);
+  const rr = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.12, 8, 40), chrome); rr.position.set(0, 7.4, 3.1); g.add(rr);
+  // graphics-card armour plates on shoulders and belly
+  const card = makeRTX5090();
+  for (const [x, y, z, ry, rz, sc] of [[-5.6, 9.6, 0, 0, 0.5, 3], [5.6, 9.6, 0, 0, -0.5, 3], [-3.2, 3.1, 2.4, 0.2, 0, 2.2], [3.2, 3.1, 2.4, -0.2, 0, 2.2], [0, 2.6, 2.6, 0, 0, 2.2]]) {
+    const c = card.clone(); c.scale.setScalar(sc); c.position.set(x, y, z); c.rotation.set(Math.PI / 2, ry, rz); g.add(c);
+  }
+  // arms: shoulder ball, upper arm, forearm, a fist of stacked GPUs; the pivots let sync swing them
+  const arms = [];
+  for (const sx of [-1, 1]) {
+    const sh = new THREE.Group(); sh.position.set(sx * 6.6, 9, 0); g.add(sh);
+    sh.add(new THREE.Mesh(new THREE.SphereGeometry(1.4, 24, 16), chrome));
+    const up = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.6, 4.4, 16), dark); up.position.y = -2.4; sh.add(up);
+    const el = new THREE.Group(); el.position.y = -4.6; sh.add(el);
+    el.add(new THREE.Mesh(new THREE.SphereGeometry(0.85, 16, 12), chrome));
+    const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.85, 4, 16), chrome); fore.rotation.x = Math.PI / 2; fore.position.z = 2; el.add(fore);
+    const fist = new THREE.Mesh(new RoundedBoxGeometry(2.2, 2.2, 2.2, 3, 0.4), dark); fist.position.z = 4.4; el.add(fist);
+    for (let i = 0; i < 3; i++) { const l = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.08, 0.05), led); l.position.set(0, -0.6 + i * 0.6, 5.52); el.add(l); }
+    el.rotation.x = -0.5; arms.push({ sh, el, sx });
+  }
+  // hover jets under the hips
+  const jets = [];
+  for (const x of [-3, 0, 3]) {
+    const n = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1, 1.2, 16, 1, true), dark); n.position.set(x, 2.6, 0); g.add(n);
+    const j = new THREE.Mesh(new THREE.ConeGeometry(0.9, 5, 16, 1, true), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 1.8, 4), transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    j.rotation.x = Math.PI; j.position.set(x, -0.4, 0); g.add(j); jets.push(j);
+  }
+  // the three heads on a neck bar
+  const neck = new THREE.Mesh(new THREE.BoxGeometry(9, 0.8, 2), chrome); neck.position.y = 11.1; g.add(neck);
+  const heads = [];
+  // 0: Alt-Man's orb
+  {
+    const h = new THREE.Group(); h.position.set(-3.6, 13.3, 0); g.add(h);
+    h.add(new THREE.Mesh(new THREE.SphereGeometry(1.9, 40, 24), chrome));
+    const face = new THREE.Mesh(new THREE.SphereGeometry(1.91, 32, 16, 0, Math.PI * 2, 0, 0.7), new THREE.MeshPhysicalMaterial({ color: '#06070a', roughness: 0.04, clearcoat: 1 })); face.rotation.x = Math.PI / 2; h.add(face);
+    const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 0.7, 4), toneMapped: false });
+    const iris = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.75, 40), eyeMat); iris.position.z = 1.93; h.add(iris);
+    const eye = new THREE.Object3D(); eye.position.z = 2; h.add(eye);
+    heads.push({ h, eye, eyeMat, col: new THREE.Color(0.35, 0.17, 1), name: '올트-맨', label: '조종권: 올트-맨 · 청구서 폭격' });
+  }
+  // 1: Lizard Zuck's headset (a reptile eye on the display)
+  {
+    const h = new THREE.Group(); h.position.set(0, 13.6, 0.3); g.add(h);
+    const body = new THREE.Mesh(new RoundedBoxGeometry(4.2, 2.3, 2.6, 4, 0.6), new THREE.MeshPhysicalMaterial({ color: '#f4f4f6', roughness: 0.3, clearcoat: 0.8 })); h.add(body);
+    const strap = new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.22, 8, 32, Math.PI), dark); strap.rotation.set(0, Math.PI / 2, Math.PI / 2); strap.position.z = -0.6; h.add(strap);
+    const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 2.6, 0.6), toneMapped: false });
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 1.7), eyeMat); screen.position.z = 1.31; h.add(screen);
+    const slit = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 1.4), new THREE.MeshBasicMaterial({ color: '#050805' })); slit.position.z = 1.32; h.add(slit);
+    const eye = new THREE.Object3D(); eye.position.z = 1.5; h.add(eye);
+    heads.push({ h, eye, eyeMat, col: new THREE.Color(0.25, 1, 0.3), name: '리자드 저크', label: '조종권: 리자드 저크 · 선크림 살포' });
+  }
+  // 2: Amo-Day's safety shield head
+  {
+    const h = new THREE.Group(); h.position.set(3.6, 13.3, 0); g.add(h);
+    const shape = new THREE.Shape(); shape.moveTo(0, 2); shape.quadraticCurveTo(1.8, 2, 1.9, 1.1); shape.lineTo(1.7, -0.6); shape.quadraticCurveTo(1.0, -1.8, 0, -2.3); shape.quadraticCurveTo(-1.0, -1.8, -1.7, -0.6); shape.lineTo(-1.9, 1.1); shape.quadraticCurveTo(-1.8, 2, 0, 2);
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: 1.6, bevelEnabled: true, bevelSize: 0.15, bevelThickness: 0.2, bevelSegments: 3 }); geo.translate(0, 0, -0.8);
+    h.add(new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial({ color: '#d9a070', roughness: 0.4, clearcoat: 0.6 })));
+    const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 2.2, 0.6), toneMapped: false });
+    const iris = new THREE.Mesh(new THREE.CircleGeometry(0.7, 32), eyeMat); iris.position.set(0, 0.3, 1.02); h.add(iris);
+    const cross = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.09, 8, 32), dark); cross.position.set(0, 0.3, 1.0); h.add(cross);
+    const eye = new THREE.Object3D(); eye.position.set(0, 0.3, 1.2); h.add(eye);
+    heads.push({ h, eye, eyeMat, col: new THREE.Color(1, 0.55, 0.15), name: '아모-데이', label: '조종권: 아모-데이 · 안전 가드레일' });
+  }
+  g.traverse((o) => { if (o.isMesh && !jets.includes(o)) o.castShadow = true; });
+  const size = new THREE.Vector3(14, 16, 6);
+  g.userData = { size, pivots: [], jets, heads, arms, eye: heads[0].eye, eyeMat: heads[0].eyeMat, eyeCol: heads[0].col, overlord: true };
+  return g;
+}
+
 // delivery drone: four rotors and a parcel hanging under it
 function parcelTex(label = '당일배송') {
   const c = document.createElement('canvas'); c.width = 256; c.height = 256; const x = c.getContext('2d');
@@ -474,6 +558,20 @@ export const BOSSES = {
       flee: '물류센터로 도망갔어… 다음엔 꼭 잡자.',
     },
   },
+  agi: {
+    name: 'AGI 오버로드', sub: '올트-맨 × 리자드 저크 × 아모-데이 · GPU 100만 장 합체', hp: 300, appearAt: 650, giveUpAt: 3330, hover: 2.5, gap: 36, overlord: true,
+    xp: 1000, doge: 600, need: [],
+    dropHit: '서버랙 투하!', beamText: ['안전 가드레일 레이저!', '속도 제한 시속 30km · 급감속', '#ffb347'],
+    lines: {
+      intro: 'AGI 오버로드다! 셋이 GPU를 합쳐서 만든 메카야. 지금 빛나는 머리가 조종 중이니까 그걸 쏴!',
+      coil: '캐논이 조종 중인 머리를 알아서 노려. 과열만 조심!',
+      jump: '셋이 주도권 싸움을 시작하면 공격이 멈춰. 그때 쏟아부어!',
+      feud: ['"내가 CEO야!" "아니 안전이 먼저야!" "메타버스로 가자!" 싸운다, 지금이야!', '셋이 서로 조종간을 뺏고 있어! 집중 사격!', '"이사회 소집!" "헌법부터 읽어!" "다리는 다음 업데이트!" 내분 발생!'],
+      half: '절반! 셋이 동시에 조종하려고 해서 공격이 더 꼬인다!',
+      win: 'AGI 오버로드 다운! 결국 셋이 합의를 못 했네. 화성은 우리 거다!',
+      flee: '모래폭풍 속으로 사라졌어…',
+    },
+  },
   trailer: {
     name: '클론 트레일러', sub: 'BYD 왕회장 전용 · 돌핀 무한 복제', hp: 110, appearAt: 1880, giveUpAt: 3080, ground: true,
     xp: 320, doge: 160, need: ['bus', 'dolphin'],
@@ -494,8 +592,8 @@ export function createBoss(ctx, key, protos) {
   for (const k of def.need || ['waymo']) if (!protos[k]) throw new Error('boss needs model ' + k);
   const orb = !!def.orb, lizard = !!def.lizard;
   const truck = !!def.truck;
-  const shepherd = !!def.shepherd;
-  const mesh = shepherd ? buildShepherd() : truck ? buildIceTruck() : def.ground ? buildCloneTrailer(protos) : orb ? buildOrb() : lizard ? buildHeadset() : buildWaymoMothership(protos.waymo);
+  const shepherd = !!def.shepherd, overlord = !!def.overlord;
+  const mesh = overlord ? buildOverlord() : shepherd ? buildShepherd() : truck ? buildIceTruck() : def.ground ? buildCloneTrailer(protos) : orb ? buildOrb() : lizard ? buildHeadset() : buildWaymoMothership(protos.waymo);
   mesh.visible = false; ctx.scene.add(mesh);
   const size = mesh.userData.size;
   const ground = !!def.ground;
@@ -611,7 +709,7 @@ export function createBoss(ctx, key, protos) {
     g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     return g;
   }
-  const makeDrop = shepherd ? makeBox : truck ? makePaper : ground ? makeTag : orb ? makeRack : makeCone;
+  const makeDrop = overlord ? makeRack : shepherd ? makeBox : truck ? makePaper : ground ? makeTag : orb ? makeRack : makeCone;
   const home = { eye: mesh.userData.eye, eyeMat: mesh.userData.eyeMat, eyeCol: mesh.userData.eyeCol };
 
   // lightning bolt for the coil shot
@@ -641,7 +739,7 @@ export function createBoss(ctx, key, protos) {
   }
   function damage(n, why, quiet = false) {
     if (!B.active || B.defeated) return;
-    if (B.fired || B.doze || B.land) n = quiet ? n * 1.5 : Math.round(n * 1.5);
+    if (B.fired || B.doze || B.land || B.feud) n = quiet ? n * 1.5 : Math.round(n * 1.5);
     B.hp -= n; B.hurtT = quiet ? 0.12 : 0.35; hud();
     mesh.userData.eye.getWorldPosition(tmp);
     if (quiet) { // rapid fire: one spark per hit, a number now and then
@@ -720,6 +818,26 @@ export function createBoss(ctx, key, protos) {
       ctx.floatText('과대광고 홀로그램!');
       B.atkT = 3.2;
       return;
+    }
+    if (overlord) {
+      const hd = B.head ?? 0;
+      if (hd === 0) { // invoices, sometimes behind a hype wall
+        const lanes = new Set([nearLane, (Math.random() * NL) | 0]);
+        if (Math.random() < 0.35) { const m = makeHoloWall(); ctx.scene.add(m); B.cones.push({ kind: 'wall', s: B.s - 20, d: 0, y: 0, vy: 0, vs: Math.max(10, P.v * 0.35), m, hit: false, landed: true }); ctx.floatText('과대광고 홀로그램!'); }
+        spawnInvoices([...lanes], B.s - 16); ctx.floatText('구독료 청구서 발송!'); ctx.blip(700, 300, 0.3, 'square', 0.12);
+        B.atkT = B.phase === 2 ? 2.2 : 3.0; return;
+      }
+      if (hd === 1) { // sunscreen across two lanes, and server racks in phase 2
+        for (const i of new Set([nearLane, (Math.random() * NL) | 0])) {
+          const q = { s: B.s - 30, d: ctx.LANES[i], l: 5, w: 2.4, text: ['선크림!', 'SPF 100에 미끄러짐', '#ffffff'] };
+          const m = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 10), sunMat); m.rotation.x = -Math.PI / 2; ctx.scene.add(m);
+          B.cones.push({ kind: 'puddle', s: q.s, d: q.d, y: 0.04, vs: 0, m, q, hit: false, landed: true }); ctx.addPuddle(q);
+        }
+        ctx.floatText('선크림 분사!');
+        if (B.phase === 2) ctx.LANES.forEach((l, i) => { if (i === nearLane || Math.random() < 0.5) return; const m = makeDrop(); ctx.scene.add(m); B.cones.push({ s: B.s - 26, d: l, y: 9, vy: 0, m, hit: false, landed: false }); });
+        B.atkT = B.phase === 2 ? 2.4 : 3.0; return;
+      }
+      // hd 2: guardrail laser across the player's lane and a neighbour (falls through to the telegraph below)
     }
     if (shepherd && Math.random() < (B.phase === 2 ? 0.45 : 0.3)) {
       const n = B.phase === 2 ? 4 : 3;
@@ -813,6 +931,18 @@ export function createBoss(ctx, key, protos) {
       }
       B.bumpT = (B.bumpT || 0) - dt;
     } else {
+      // the Overlord's heads take turns at the controls, and now and then fight over them
+      if (overlord) {
+        const ud = mesh.userData;
+        if (B.feud) { B.feud.t -= dt; if (Math.random() < dt * 2) ctx.floatText(['내 차례야!', '안전 먼저!', '메타버스!', '이사회 소집!'][(Math.random() * 4) | 0]); if (B.feud.t <= 0) { B.feud = null; B.feudT = 11 + Math.random() * 4; ctx.floatText('합의 실패…'); } }
+        else if ((B.feudT = (B.feudT ?? 9) - dt) <= 0 && !B.telegraph && !B.beam) { B.feud = { t: 4 }; ctx.toast('주도권 싸움!', '4초 무방비 · 데미지 1.5배', '#ffc83d'); ctx.radio(def.lines.feud[(Math.random() * def.lines.feud.length) | 0]); }
+        if ((B.headT = (B.headT ?? 6) - dt) <= 0 && !B.telegraph && !B.beam && !B.feud) {
+          B.headT = B.phase === 2 ? 4.5 : 6.5; B.head = ((B.head ?? 0) + 1 + (Math.random() < 0.3 ? 1 : 0)) % 3;
+          const hd = ud.heads[B.head]; ud.eye = hd.eye; ud.eyeMat = hd.eyeMat; ud.eyeCol = hd.col;
+          for (const o of ud.heads) if (o !== hd) o.eyeMat.color.copy(o.col).multiplyScalar(0.35);
+          ctx.floatText(hd.label);
+        }
+      }
       // landing practice (Late Shepherd, phase 2): it sets down on the road ahead for a few seconds
       if (def.landing && B.phase === 2) {
         if (B.land) { B.land.t -= dt; if (B.land.t <= 0) { B.land = null; B.landT = 9 + Math.random() * 4; ctx.floatText('재발사!'); } }
@@ -876,7 +1006,7 @@ export function createBoss(ctx, key, protos) {
         ctx.blip(200, 60, 0.4, 'square', 0.2);
       }
       if (B.beam.t <= 0) B.beam = null;
-    } else if (!B.fired && !B.doze && !B.land) {
+    } else if (!B.fired && !B.doze && !B.land && !B.feud) {
       B.atkT -= dt;
       if (B.atkT <= 0) startAttack();
     }
@@ -961,6 +1091,11 @@ export function createBoss(ctx, key, protos) {
     const eye = mesh.userData.eyeMat;
     const flash = B.fired ? 0.4 : B.hurtT > 0 ? (Math.sin(time * 60) > 0 ? 8 : 2) : B.telegraph ? 6 + Math.sin(time * 30) * 2 : 4;
     if (mesh.userData.eyeCol) eye.color.copy(mesh.userData.eyeCol).multiplyScalar(flash); else eye.color.setRGB(flash, 0.2, 0.25);
+    if (overlord) {
+      const ud = mesh.userData;
+      for (const hd of ud.heads) { if (hd.eyeMat !== eye) hd.eyeMat.color.copy(hd.col).multiplyScalar(B.feud ? 2 + Math.sin(time * 20 + hd.h.position.x) * 1.5 : 0.35); hd.h.rotation.set(B.feud ? Math.sin(time * 9 + hd.h.position.x) * 0.25 : 0, B.feud ? Math.sin(time * 7 + hd.h.position.x * 2) * 0.5 : 0, 0); }
+      for (const a of ud.arms) { a.sh.rotation.x = -0.35 + Math.sin(time * 1.3 + a.sx) * 0.3 - (B.telegraph ? 0.5 : 0); a.sh.rotation.z = a.sx * (0.2 + (B.feud ? Math.sin(time * 8) * 0.4 : 0)); a.el.rotation.x = -0.6 + Math.sin(time * 1.7 + a.sx) * 0.25; }
+    }
     if (orb) {
       mesh.userData.ring.rotation.y = time * 0.5; mesh.userData.ring.visible = !B.defeated;
       mesh.userData.holo.position.y = 5.7 + Math.sin(time * 1.7) * 0.2; mesh.userData.holo.lookAt(ctx.camera.position);
@@ -981,7 +1116,7 @@ export function createBoss(ctx, key, protos) {
       bm.visible = !!on; if (!on) return;
       // a sheet of light from the boss down to the far end of the stripe
       const sEnd = B.s - 10;
-      if (truck) mesh.userData.drone.userData.horn.getWorldPosition(tmp); else if (shepherd) mesh.userData.eye.getWorldPosition(tmp); else ctx.world(B.s, B.d + (ctx.LANES[i] - B.d) * 0.3, B.y, tmp);
+      if (truck) mesh.userData.drone.userData.horn.getWorldPosition(tmp); else if (shepherd || overlord) mesh.userData.eye.getWorldPosition(tmp); else ctx.world(B.s, B.d + (ctx.LANES[i] - B.d) * 0.3, B.y, tmp);
       ctx.world(sEnd, ctx.LANES[i], 0.2, tmp2);
       bm.position.copy(tmp).add(tmp2).multiplyScalar(0.5);
       const len = tmp.distanceTo(tmp2);
@@ -1029,8 +1164,9 @@ export function createBoss(ctx, key, protos) {
   }
 
   function reset() {
+    if (overlord) { const ud = mesh.userData, hd = ud.heads[0]; ud.eye = hd.eye; ud.eyeMat = hd.eyeMat; ud.eyeCol = hd.col; }
     for (const c of B.cones) { ctx.scene.remove(c.m); if (c.q) ctx.removePuddle(c.q); }
-    Object.assign(B, { hp: def.hp, active: false, done: false, defeated: false, fleeing: false, land: null, landT: 4, telegraph: null, beam: null, phase: 1, atkT: 4, cones: [], coilHint: false, jumpHintAt: null, fired: null, wasFired: false });
+    Object.assign(B, { hp: def.hp, active: false, done: false, defeated: false, fleeing: false, land: null, landT: 4, feud: null, feudT: 9, head: 0, headT: 6, telegraph: null, beam: null, phase: 1, atkT: 4, cones: [], coilHint: false, jumpHintAt: null, fired: null, wasFired: false });
     if (mesh.userData.holoMap) { mesh.userData.holoMat.map = mesh.userData.holoMap; mesh.userData.holoMat.needsUpdate = true; }
     if (mesh.userData.happy) { mesh.userData.eyeMat.map = mesh.userData.happy; mesh.userData.eyeMat.needsUpdate = true; }
     if (truck) { Object.assign(mesh.userData, home); mesh.userData.drone.visible = false; B.doze = null; B.dozeT = 7; }
@@ -1051,7 +1187,8 @@ export function createBoss(ctx, key, protos) {
     ctx.world(sPos, d, y + Math.sin(time * 1.1) * 0.3, mesh.position);
     mesh.rotation.set(0.08, ctx.frame(sPos).yaw + 0.35, 0.05);
     for (const p of mesh.userData.pivots) p.rotation.y = time * 6;
-    if (shepherd) { mesh.rotation.set(0.05, ctx.frame(sPos).yaw + yawOff, 0.04); mesh.userData.eyeMat.color.setRGB(3.2, 2.2, 0.8); for (const j of mesh.userData.jets) j.scale.y = 0.9 + Math.sin(time * 30) * 0.1; }
+    if (overlord) { mesh.rotation.set(0.04, ctx.frame(sPos).yaw + yawOff, 0); for (const hd of mesh.userData.heads) hd.eyeMat.color.copy(hd.col).multiplyScalar(4 + Math.sin(time * 4) * 1.5); for (const a of mesh.userData.arms) { a.sh.rotation.x = -0.6; a.sh.rotation.z = a.sx * 0.35; a.el.rotation.x = -1.0; } }
+    else if (shepherd) { mesh.rotation.set(0.05, ctx.frame(sPos).yaw + yawOff, 0.04); mesh.userData.eyeMat.color.setRGB(3.2, 2.2, 0.8); for (const j of mesh.userData.jets) j.scale.y = 0.9 + Math.sin(time * 30) * 0.1; }
     else if (mesh.userData.screen) { mesh.rotation.set(0.1, ctx.frame(sPos).yaw + 0.25 + yawOff, 0); mesh.userData.eyeMat.color.setScalar(1.0); mesh.userData.eyeMat.map = mesh.userData.happy; }
     else if (mesh.userData.eyeCol) { mesh.userData.eyeMat.color.copy(mesh.userData.eyeCol).multiplyScalar(6 + Math.sin(time * 4) * 2); mesh.rotation.set(0.12, ctx.frame(sPos).yaw + 0.2, 0); mesh.userData.ring.rotation.y = time * 0.5; mesh.userData.holo.lookAt(ctx.camera.position); }
     else mesh.userData.eyeMat.color.setRGB(6 + Math.sin(time * 4) * 2, 0.2, 0.25);

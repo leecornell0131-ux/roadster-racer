@@ -1238,7 +1238,7 @@ function stageUI() {
   $('pTip').innerHTML = T.tip; $('pTweet').textContent = T.tweet; $('pMeta').textContent = T.meta; $('loadTxt').textContent = T.load;
   $('hudStage').textContent = T.hud; $('rEyebrow').textContent = T.clear; $('rTitle').textContent = T.clearTitle;
   const i = ORDER.indexOf(ST), next = ORDER[i + 1];
-  $('rNext').innerHTML = `별 조건: ${ST.stars.text}<br>도지코인은 X 개러지에서 자석, 탱크, 컴프레서, 모터 강화에 써요.${next ? '' : ' 다음 스테이지는 다음 업데이트에서 열려요.'}`;
+  $('rNext').innerHTML = `별 조건: ${ST.stars.text}<br>도지코인은 X 개러지에서 자석, 탱크, 컴프레서, 모터 강화에 써요.${next ? '' : ' 오스틴에서 화성까지, 전 스테이지 정복! 랭킹과 고스트 레이스는 다음 업데이트에서 열려요.'}`;
   $('nextBtn').hidden = !next;
   if (next) { $('nextBtn').textContent = `다음: ${next.name} →`; $('nextBtn').onclick = () => goStage(next.id); }
   $('stagePick').innerHTML = ORDER.map((st) => `<button type="button" class="chip${st === ST ? ' on' : ''}" data-stage="${st.id}">${String(st.num).padStart(2, '0')} ${st.name}</button>`).join('');

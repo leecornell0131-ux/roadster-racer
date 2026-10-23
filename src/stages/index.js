@@ -7,6 +7,7 @@ import dc from './dc.js';
 import starbase from './starbase.js';
 import starlink from './starlink.js';
 import moon from './moon.js';
+import mars from './mars.js';
 
-export const ORDER = [austin, la, sf, metaverse, dc, starbase, starlink, moon];
+export const ORDER = [austin, la, sf, metaverse, dc, starbase, starlink, moon, mars];
 export const STAGES = Object.fromEntries(ORDER.map((s) => [s.id, s]));
