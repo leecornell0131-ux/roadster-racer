@@ -107,6 +107,10 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
 .go:focus-visible, #mute:focus-visible { outline: 3px solid var(--neon); outline-offset: 3px; }
 #saveLine, #loadTxt { font: 500 12px var(--f-hud); opacity: .7; letter-spacing: .05em; }
 #credits { position: fixed; right: 12px; top: 8px; max-width: 36vw; text-align: right; font: 400 8px/1.35 var(--f-hud); opacity: .4; pointer-events: none; }
+.stagepick { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.chip { font: 700 11px var(--f-hud); letter-spacing: .08em; color: var(--text); background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; cursor: pointer; }
+.chip.on { border-color: var(--hot); color: #fff; box-shadow: 0 0 10px rgba(255, 61, 110, .5); }
+.chip:focus-visible { outline: 2px solid var(--neon); outline-offset: 2px; }
 /* results */
 #results { align-items: center; justify-content: center; background: rgba(11, 7, 22, .72); }
 .rcard { width: min(560px, 100%); max-height: 100%; overflow-y: auto; padding: 18px 22px 16px; text-align: center; box-sizing: border-box; }
@@ -149,21 +153,22 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
       <div id="credits"></div>
   <div class="pwrap">
     <div>
-      <div class="eyebrow">STAGE 01 · ROBOTAXI CITY</div>
-      <div class="ptitle">AUSTIN, TX</div>
-      <div class="psub">로보택시가 처음 달린 도시</div>
-      <p class="tip"><b>TIP</b> 노란 경사로에서 점프하고, 공중에서 점프 버튼을 <b>꾹 누르면</b> 압축공기를 뿜으며 사뿐히 착지해요. 퍼펙트 랜딩은 속도 보너스. 점프는 시간이 지나면 다시 충전돼요.</p>
+      <div class="stagepick" id="stagePick"></div>
+      <div class="eyebrow" id="pEyebrow"></div>
+      <div class="ptitle" id="pTitle"></div>
+      <div class="psub" id="pSub"></div>
+      <p class="tip" id="pTip"></p>
       <div class="cta">
         <button class="go" id="startBtn" disabled>트랙 생성 중…</button>
         <button class="ghost" id="garageBtn" type="button">X 개러지</button>
         <span id="saveLine"></span>
-        <span id="loadTxt">오스틴 도로를 까는 중 · 실제 차 모델 불러오는 중</span>
+        <span id="loadTxt"></span>
       </div>
     </div>
     <div class="tweet panel">
       <div class="who"><div class="av">EM</div>일론 <span>@roadster_elon</span></div>
-      로보택시는 오늘도 오스틴에서 영업 중. 웨이모는 아직 라이다한테 길 물어보는 중. 다리 하나 끊겼다던데 우리 차는 날 수 있으니 상관없음.
-      <div class="meta">오후 7:42 · 오스틴, 텍사스 · 리트윗 42만</div>
+      <span id="pTweet"></span>
+      <div class="meta" id="pMeta"></div>
     </div>
   </div>
 </div>
@@ -173,7 +178,7 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
     <div class="panel lvrow"><div id="lv">LV 1</div><div><div class="small" id="xpTxt">EXP 0 / 100</div><div class="xpbar"><div id="xpBar"></div></div></div></div>
     <div class="panel dogerow"><div class="coin">Ð</div><span id="doge">0</span></div>
   </div>
-  <div class="panel tr"><div class="small">STAGE 1 · AUSTIN, TX</div><div id="time">00:00.00</div><div class="prog"><div id="prog"></div><div id="progDot"></div></div></div>
+  <div class="panel tr"><div class="small" id="hudStage"></div><div id="time">00:00.00</div><div class="prog"><div id="prog"></div><div id="progDot"></div></div></div>
   <button id="mute" type="button">소리 켬</button>
   <div id="radio" class="panel"><div id="radioAva">EM</div><div><span id="radioWho">일론</span><span id="radioTxt"></span></div></div>
   <div id="toast"></div>
@@ -192,8 +197,8 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
 
 <div id="results" hidden>
   <div class="rcard panel">
-    <div class="eyebrow">STAGE 01 CLEAR</div>
-    <h2>오스틴 정복</h2>
+    <div class="eyebrow" id="rEyebrow"></div>
+    <h2 id="rTitle"></h2>
     <div id="rStars"></div>
     <dl class="rgrid">
       <dt>기록</dt><dd id="rTime"></dd>
@@ -203,9 +208,10 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
       <dt>경험치</dt><dd id="rXp"></dd>
       <dt>레벨</dt><dd id="rLv"></dd>
       <dt>보스</dt><dd id="rBoss"></dd>
+      <dt id="rRoofRow" hidden>지붕 질주</dt><dd id="rRoofRow2" hidden><span id="rRoofs"></span>대</dd>
     </dl>
-    <p class="next">별 조건: 완주 · 웨이모 마더십 격추 · 62초 이내 또는 퍼펙트 랜딩 3회<br>도지코인은 X 개러지에서 자석, 탱크, 컴프레서, 모터 강화에 써요. 다음 스테이지 LA는 다음 업데이트에서 열려요.</p>
-    <div class="cta center"><button class="go" id="againBtn">다시 달리기</button><button class="ghost" id="garageBtn2" type="button">X 개러지</button></div>
+    <p class="next" id="rNext"></p>
+    <div class="cta center"><button class="go" id="nextBtn" hidden></button><button class="ghost" id="againBtn">다시 달리기</button><button class="ghost" id="garageBtn2" type="button">X 개러지</button></div>
   </div>
 </div>
 

@@ -165,9 +165,10 @@ function unify(g) { // same attribute set on every piece so they merge
 }
 
 // returns a prototype car: static parts merged per material, wheels on spin pivots
-export async function loadCar(kind) {
+// lod: the heavily simplified copy in assets/cars/lod/ (for parked crowds)
+export async function loadCar(kind, lod = false) {
   const cfg = CARS[kind];
-  const gltf = await loadGltfJson(cfg.url);
+  const gltf = await loadGltfJson(lod ? cfg.url.replace('cars/', 'cars/lod/') : cfg.url);
   const holder = new THREE.Group(); holder.add(gltf.scene); holder.rotation.y = cfg.yaw;
   holder.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(holder);
@@ -280,4 +281,30 @@ export function addSensorKit(car) {
   car.add(kit);
   car.userData.size = size.clone().setY(top + 0.5);
   return car;
+}
+
+// many parked copies of one prototype as instanced meshes (a traffic jam costs one draw call per part,
+// not per car). placements: [{ m: Matrix4 in world space, color }]; paint colour goes in instanceColor.
+export function fleet(proto, placements, brake = true) {
+  const g = new THREE.Group();
+  proto.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(proto.matrixWorld).invert();
+  const cfg = proto.userData.cfg, tmp = new THREE.Matrix4(), col = new THREE.Color();
+  proto.traverse((o) => {
+    if (!o.isMesh || o.material.blending === THREE.AdditiveBlending) return;
+    const local = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+    let mat = o.material;
+    const isPaint = mat.name === 'paint';
+    if (isPaint) { mat = mat.clone(); mat.color.set('#ffffff'); }
+    else if (mat.name === 'tail' && brake) { mat = mat.clone(); mat.color.setRGB(6, 0.3, 0.35); }
+    const im = new THREE.InstancedMesh(o.geometry, mat, placements.length);
+    placements.forEach((p, i) => {
+      im.setMatrixAt(i, tmp.multiplyMatrices(p.m, local));
+      if (isPaint) im.setColorAt(i, col.set(p.color ?? cfg.colors[(Math.random() * cfg.colors.length) | 0]));
+    });
+    im.castShadow = o.castShadow; im.receiveShadow = true;
+    im.computeBoundingSphere();
+    g.add(im);
+  });
+  return g;
 }

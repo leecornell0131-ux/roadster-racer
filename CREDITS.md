@@ -17,4 +17,6 @@ Sky: Venice Sunset HDRI, Poly Haven (CC0).
 
 NC (non-commercial) models must be replaced before any paid release.
 
-Textures (CC0): Poly Haven asphalt_02, concrete_pavement, concrete_wall_008, sparse_grass; ambientCG Facade006, Facade009, Facade018A, Facade020A. HDRI: Poly Haven Highway Bridge Sunset (CC0).
+Textures (CC0): Poly Haven asphalt_02, concrete_pavement, concrete_wall_008, sparse_grass, aerial_sand; ambientCG Facade006, Facade009, Facade018A, Facade020A. HDRI (CC0, Poly Haven): Highway Bridge Sunset (Austin), Kloofendal 48d Partly Cloudy Puresky (LA).
+
+Parked-traffic LODs in assets/cars/lod/ are simplified copies of the models above (same licenses).

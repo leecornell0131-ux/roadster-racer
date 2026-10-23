@@ -1,12 +1,13 @@
-// Roadster Racer — Stage 1: Austin, TX
+// Roadster Racer — engine. Stage content (track, scenery, traffic mix, boss, texts) lives in src/stages/.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100, makeBlackwell } from './models.js';
-import { upgradeRoadster, loadCar, instance, addSensorKit, CARS } from './realcars.js';
+import { upgradeRoadster, loadCar, instance, addSensorKit, fleet, CARS } from './realcars.js';
 import { createBoss } from './boss.js';
+import { STAGES, ORDER } from './stages/index.js';
 
 // ---------- quality ----------
 const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -14,13 +15,22 @@ const Q = IS_MOBILE
   ? { pr: Math.min(devicePixelRatio, 1.5), shadow: 1024, bStep: 24, bloomRes: 0.5 }
   : { pr: Math.min(devicePixelRatio, 2), shadow: 2048, bStep: 17, bloomRes: 1 };
 
+// ---------- stage ----------
+const STAGE_KEY = 'roadster-racer-stage';
+const ST = (() => {
+  let id = new URLSearchParams(location.search).get('stage');
+  if (!STAGES[id]) try { id = localStorage.getItem(STAGE_KEY); } catch {}
+  return STAGES[id] || ORDER[0];
+})();
+function goStage(id) { try { localStorage.setItem(STAGE_KEY, id); } catch {} location.reload(); }
+
 // ---------- tuning ----------
 const G = 32;
-const ROAD_HALF = 12;
-const LANES = [-9, -3, 3, 9];
-const GAP0 = 2500, GAP1 = 2536;          // broken Congress Ave bridge
-const BRIDGE0 = 2445, BRIDGE1 = 2615;
-const FINISH_S = 2900;
+const ROAD_HALF = ST.roadHalf;
+const LANES = ST.lanes;
+const GAPS = ST.gaps || [];
+const FINISH_S = ST.finish;
+const CEILINGS = ST.ceilings || [];
 const JUMP_V = 13;
 const AIR_FUEL = 1.3;                     // seconds of landing thrust
 
@@ -34,8 +44,12 @@ export const CAST = {
 const SAVE_KEY = 'roadster-racer-save-v1';
 const save = loadSave();
 function loadSave() {
-  const base = () => ({ level: 1, xp: 0, doge: 0, best: 0, up: { magnet: 0, tank: 0, comp: 0, motor: 0 } });
-  try { const s = Object.assign(base(), JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); s.up = Object.assign(base().up, s.up); return s; }
+  const base = () => ({ level: 1, xp: 0, doge: 0, best: 0, bests: {}, up: { magnet: 0, tank: 0, comp: 0, motor: 0 } });
+  try {
+    const s = Object.assign(base(), JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); s.up = Object.assign(base().up, s.up);
+    if (s.best && !s.bests.austin) s.bests.austin = s.best; // v1 saves kept one best time (Austin)
+    return s;
+  }
   catch { return base(); }
 }
 let saveTimer = 0;
@@ -55,10 +69,7 @@ const recharge = (l = save.up.comp) => 8 - l * 0.9;
 const maxCharges = () => Math.min(12, 2 + save.level + save.up.tank);
 
 // ---------- track geometry ----------
-function cx(s) {
-  const k = THREE.MathUtils.smoothstep(s, 120, 420);
-  return k * (38 * Math.sin(s / 420) + 16 * Math.sin(s / 170 + 1.3) - 16 * Math.sin(1.3) * 0);
-}
+const cx = ST.cx;
 const _f = new THREE.Vector3(), _r = new THREE.Vector3();
 function frame(s) {
   const dx = (cx(s + 0.5) - cx(s - 0.5));
@@ -73,31 +84,33 @@ function world(s, d, y, out = new THREE.Vector3()) {
 }
 
 // ramps: {s0, len, dL, dR, h}
-const RAMPS = [
-  { s0: 260, len: 16, dL: -12, dR: -5, h: 2.6 },
-  { s0: 420, len: 16, dL: 5, dR: 12, h: 2.6 },
-  { s0: 620, len: 18, dL: -6, dR: 6, h: 3.2 },
-  { s0: 860, len: 14, dL: -12, dR: -6, h: 2.4 },
-  { s0: 860, len: 14, dL: 6, dR: 12, h: 2.4 },
-  { s0: 1120, len: 16, dL: -3, dR: 6, h: 4.0 },
-  { s0: 1380, len: 14, dL: 4, dR: 12, h: 2.8 },
-  { s0: 1600, len: 16, dL: -12, dR: -2, h: 3.0 },
-  { s0: 1850, len: 18, dL: -6, dR: 6, h: 3.6 },
-  { s0: 2100, len: 14, dL: -12, dR: -6, h: 2.6 },
-  { s0: 2100, len: 14, dL: 6, dR: 12, h: 2.6 },
-  { s0: 2300, len: 16, dL: -4, dR: 4, h: 3.0 },
-  { s0: GAP0 - 20, len: 20, dL: -ROAD_HALF, dR: ROAD_HALF, h: 2.6 },
-];
+const RAMPS = ST.ramps;
 function rampAt(s, d) {
   for (const r of RAMPS) if (s >= r.s0 && s <= r.s0 + r.len && d >= r.dL && d <= r.dR) return r;
   return null;
 }
-// the car is ~1.8 m wide: it rides up a ramp if either side is on it
-function carGround(s, d) { return Math.max(groundAt(s, d - 0.8), groundAt(s, d), groundAt(s, d + 0.8)); }
+// the car is ~1.8 m wide: it rides up a ramp if either side is on it.
+// With yRef (the car's height) roofs count too: anything you're at or above can be landed on.
+function carGround(s, d, yRef) {
+  const g = Math.max(groundAt(s, d - 0.8), groundAt(s, d), groundAt(s, d + 0.8));
+  if (yRef == null) return g;
+  return Math.max(g, roofAt(s, d - 0.7, yRef), roofAt(s, d, yRef), roofAt(s, d + 0.7, yRef));
+}
 function groundAt(s, d) {
-  if (s > GAP0 && s < GAP1) return -1e9;
+  for (const g of GAPS) if (s > g.s0 && s < g.s1) return -1e9;
   const r = rampAt(s, d);
   return r ? r.h * (s - r.s0) / r.len : 0;
+}
+function roofAt(s, d, yRef) {
+  let top = -1e9;
+  for (const t of traffic) {
+    if (Math.abs(t.s - s) > t.hl * 0.92 || Math.abs(t.d - d) > t.hw * 0.85) continue;
+    const r = t.y + t.h;
+    if (yRef >= r - 0.7 && r > top) top = r;
+  }
+  for (const c of CEILINGS) if (!c.holes && s > c.s0 && s < c.s1 && yRef >= c.y1 - 0.7 && c.y1 > top) top = c.y1; // overpass decks are floors from above
+  const b = boss?.roofAt?.(s, d, yRef);
+  return b != null && b > top ? b : top;
 }
 
 // ---------- renderer / scene ----------
@@ -111,22 +124,26 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.92;
 
 const scene = new THREE.Scene();
-const FOG = new THREE.Color('#4a2346');
-scene.fog = new THREE.Fog(FOG, 140, 950);
+const ENV = ST.env;
+const FOG = new THREE.Color(ENV.fog[0]);
+scene.fog = new THREE.Fog(FOG, ENV.fog[1], ENV.fog[2]);
+renderer.toneMappingExposure = ENV.exposure ?? 0.92;
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.3, 3000);
 
 // sky
-const SUN_DIR = new THREE.Vector3(-0.35, 0.16, -1).normalize();
+const SUN_DIR = new THREE.Vector3(...(ENV.sunDir || [-0.35, 0.3, -1])).normalize();
+const SKY = ENV.sky || { top: [0.2, 0.36, 0.62], mid: [0.42, 0.56, 0.76], hor: [0.8, 0.78, 0.72], low: [0.5, 0.46, 0.4], glow: [1, 0.9, 0.7] };
+const v3 = (a) => `vec3(${a.map((x) => x.toFixed(3)).join(',')})`;
 const skyMat = new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite: false, fog: false,
   uniforms: { sunDir: { value: SUN_DIR } },
   vertexShader: `varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
   fragmentShader: `varying vec3 vP; uniform vec3 sunDir;
     void main(){ float h = vP.y;
-      vec3 top = vec3(0.06,0.04,0.17), mid = vec3(0.42,0.12,0.36), hor = vec3(1.0,0.45,0.25), low = vec3(0.29,0.13,0.25);
+      vec3 top = ${v3(SKY.top)}, mid = ${v3(SKY.mid)}, hor = ${v3(SKY.hor)}, low = ${v3(SKY.low)};
       vec3 c = h > 0.0 ? mix(hor, mix(mid, top, smoothstep(0.15,0.7,h)), smoothstep(0.0,0.18,h)) : mix(hor*0.6, low, smoothstep(0.0,-0.2,h));
       float sd = max(dot(vP, sunDir), 0.0);
-      c += vec3(1.0,0.55,0.25) * pow(sd, 18.0) * 0.9 + vec3(1.0,0.85,0.6) * pow(sd, 900.0) * 6.0;
+      c += ${v3(SKY.glow)} * pow(sd, 18.0) * 0.9 + vec3(1.0,0.85,0.6) * pow(sd, 900.0) * 6.0;
       gl_FragColor = vec4(c, 1.0); }`,
 });
 const sky = new THREE.Mesh(new THREE.SphereGeometry(2400, 32, 16), skyMat);
@@ -136,7 +153,7 @@ scene.add(sky);
   envScene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), skyMat));
   const pm = new THREE.PMREMGenerator(renderer);
   scene.environment = pm.fromScene(envScene, 0.02).texture;
-  // real city-at-sunset HDRI (CC0, Poly Haven "Highway Bridge Sunset"), stored as RGBE bytes in a grayscale PNG
+  // real HDRI (CC0, Poly Haven), stored as RGBE bytes in a grayscale PNG; with env.bg it is also the sky
   const img = new Image();
   img.onload = () => {
     try {
@@ -144,22 +161,31 @@ scene.add(sky);
       const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0);
       const src = g.getImageData(0, 0, c.width, c.height).data, W = c.width / 4, H = c.height;
       const f = new Float32Array(W * H * 4);
-      for (let i = 0; i < W * H; i++) {
+      let best = -1, bi = 0;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = y * W + x, o = ((ENV.envUpsideDown ? y : H - 1 - y) * W + x) * 4; // PNG rows run top-down, texture rows bottom-up
         const e = src[(i * 4 + 3) * 4], k = e ? Math.pow(2, e - 136) : 0;
-        f[i * 4] = src[i * 16] * k; f[i * 4 + 1] = src[(i * 4 + 1) * 4] * k; f[i * 4 + 2] = src[(i * 4 + 2) * 4] * k; f[i * 4 + 3] = 1;
+        f[o] = src[i * 16] * k; f[o + 1] = src[(i * 4 + 1) * 4] * k; f[o + 2] = src[(i * 4 + 2) * 4] * k; f[o + 3] = 1;
+        const l = f[o] + f[o + 1] + f[o + 2]; if (l > best) { best = l; bi = o / 4; }
       }
       const tex = new THREE.DataTexture(f, W, H, THREE.RGBAFormat, THREE.FloatType);
       tex.mapping = THREE.EquirectangularReflectionMapping; tex.colorSpace = THREE.LinearSRGBColorSpace;
       tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.flipY = false; tex.needsUpdate = true;
       scene.environment = pm.fromEquirectangular(tex).texture;
-      tex.dispose();
+      if (ENV.bg) {
+        // aim the shadow-casting sun at the HDRI's sun
+        const u = (bi % W + 0.5) / W, v = (Math.floor(bi / W) + 0.5) / H;
+        const phi = (u - 0.5) * Math.PI * 2, el = (v - 0.5) * Math.PI;
+        SUN_DIR.set(Math.cos(phi) * Math.cos(el), Math.sin(el), Math.sin(phi) * Math.cos(el));
+        scene.background = tex; scene.backgroundIntensity = ENV.bgIntensity ?? 1; sky.visible = false;
+      } else tex.dispose();
     } catch (err) { console.warn('HDRI skipped', err); }
   };
-  img.src = 'assets/city_sunset_rgbe_gray.png';
+  img.src = ENV.hdri;
 }
 
-scene.add(new THREE.HemisphereLight('#9d7be0', '#2a1712', 0.7));
-const sun = new THREE.DirectionalLight('#ffb27a', 2.4);
+scene.add(new THREE.HemisphereLight(...ENV.hemi));
+const sun = new THREE.DirectionalLight(...ENV.sun);
 sun.castShadow = true;
 sun.shadow.mapSize.set(Q.shadow, Q.shadow);
 Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40, near: 1, far: 200 });
@@ -184,17 +210,20 @@ function photo(url, { srgb = true, rep = [1, 1], onload } = {}) {
   t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = 8;
   return t;
 }
-// lane paint drawn over real asphalt: one canvas tile = 24 m x 24 m of road
+// lane paint drawn over real asphalt: one canvas tile = the road's width x 24 m
+const ROAD = ST.road || {};
 function drawRoad(g, w, h, asphalt) {
-  if (asphalt) { for (let x = 0; x < 4; x++) for (let y = 0; y < 4; y++) g.drawImage(asphalt, x * w / 4, y * h / 4, w / 4, h / 4); g.fillStyle = 'rgba(20,16,26,0.35)'; g.fillRect(0, 0, w, h); }
+  const tiles = Math.max(4, Math.round(ROAD_HALF / 3));
+  if (asphalt) { for (let x = 0; x < tiles; x++) for (let y = 0; y < 4; y++) g.drawImage(asphalt, x * w / tiles, y * h / 4, w / tiles + 1, h / 4 + 1); g.fillStyle = ROAD.tint || 'rgba(20,16,26,0.35)'; g.fillRect(0, 0, w, h); }
   else { g.fillStyle = '#26222b'; g.fillRect(0, 0, w, h); }
+  const lw = 0.15 / (ROAD_HALF * 2) * w; // 15 cm lines
   const paint = (c, x, y0, ww, hh) => { g.fillStyle = c; g.globalAlpha = 0.88; g.fillRect(x, y0, ww, hh); g.globalAlpha = 1; };
-  paint('#e9e4f0', w * 0.025, 0, w * 0.012, h); paint('#e9e4f0', w * 0.963, 0, w * 0.012, h);
-  for (const u of [0.25, 0.75]) paint('#e9e4f0', w * u - w * 0.006, 0, w * 0.012, h * 0.5);
-  paint('#ffc83d', w * 0.5 - w * 0.018, 0, w * 0.012, h); paint('#ffc83d', w * 0.5 + w * 0.006, 0, w * 0.012, h);
+  paint('#e9e4f0', w * 0.012, 0, lw, h); paint('#e9e4f0', w * 0.988 - lw, 0, lw, h);
+  for (const u of ROAD.dashes || [0.25, 0.75]) paint('#e9e4f0', w * u - lw / 2, 0, lw, h * 0.4);
+  if (ROAD.yellow ?? true) { paint('#ffc83d', w * 0.5 - lw * 1.5, 0, lw, h); paint('#ffc83d', w * 0.5 + lw * 0.5, 0, lw, h); }
 }
 const roadTex = canvasTex(1024, 1024, (g, w, h) => drawRoad(g, w, h), true);
-photo('asphalt_diff.jpg', { onload: (t) => { const c = roadTex.image; drawRoad(c.getContext('2d'), c.width, c.height, t.image); roadTex.needsUpdate = true; } });
+photo(`${ROAD.tex || 'asphalt'}_diff.jpg`, { onload: (t) => { const c = roadTex.image; drawRoad(c.getContext('2d'), c.width, c.height, t.image); roadTex.needsUpdate = true; } });
 const hazardTex = canvasTex(128, 128, (g, w, h) => {
   g.fillStyle = '#ffc400'; g.fillRect(0, 0, w, h); g.fillStyle = '#141414';
   for (let i = -w; i < w * 2; i += 32) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 16, 0); g.lineTo(i + 16 - h, h); g.lineTo(i - h, h); g.fill(); }
@@ -233,18 +262,36 @@ function ribbon(s0, s1, dL, dR, step, yFn, uvLen = 0) {
   geo.setIndex(idx); geo.computeVertexNormals();
   return geo;
 }
-// vertical wall following the track at lateral d, between y0(s) and y1(s)
-function wall(s0, s1, d, step, y0Fn, y1Fn) {
+// vertical wall following the track at lateral d, between y0(s) and y1(s); uv in metres / uvLen
+function wall(s0, s1, d, step, y0Fn, y1Fn, uvLen = 1) {
   const segs = Math.max(1, Math.ceil((s1 - s0) / step));
-  const pos = [], idx = [], v = new THREE.Vector3();
+  const pos = [], uv = [], idx = [], v = new THREE.Vector3();
   for (let i = 0; i <= segs; i++) {
     const s = s0 + (s1 - s0) * i / segs;
-    world(s, d, y0Fn(s), v); pos.push(v.x, v.y, v.z);
-    world(s, d, y1Fn(s), v); pos.push(v.x, v.y, v.z);
+    const a0 = y0Fn(s), a1 = y1Fn(s);
+    world(s, d, a0, v); pos.push(v.x, v.y, v.z); uv.push(s / uvLen, a0 / uvLen);
+    world(s, d, a1, v); pos.push(v.x, v.y, v.z); uv.push(s / uvLen, a1 / uvLen);
     if (i < segs) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx); geo.computeVertexNormals();
+  return geo;
+}
+// terrain sheet over (s, d) with height yFn(s, d); uv in metres / uvLen
+function grid(s0, s1, dL, dR, stepS, stepD, yFn, uvLen = 1) {
+  const ns = Math.max(1, Math.ceil((s1 - s0) / stepS)), nd = Math.max(1, Math.ceil((dR - dL) / stepD));
+  const pos = new Float32Array((ns + 1) * (nd + 1) * 3), uv = new Float32Array((ns + 1) * (nd + 1) * 2), idx = [];
+  const v = new THREE.Vector3();
+  for (let i = 0; i <= ns; i++) for (let j = 0; j <= nd; j++) {
+    const s = s0 + (s1 - s0) * i / ns, d = dL + (dR - dL) * j / nd, o = i * (nd + 1) + j;
+    world(s, d, yFn(s, d), v); pos.set([v.x, v.y, v.z], o * 3); uv.set([d / uvLen, s / uvLen], o * 2);
+    if (i < ns && j < nd) idx.push(o, o + 1, o + nd + 1, o + 1, o + nd + 2, o + nd + 1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geo.setIndex(idx); geo.computeVertexNormals();
   return geo;
 }
@@ -258,59 +305,26 @@ function crossWall(s, dL, dR, y0, y1) {
 }
 
 // ---------- world building ----------
-const M = {
-  road: new THREE.MeshStandardMaterial({ map: roadTex, normalMap: photo('asphalt_nor.jpg', { srgb: false, rep: [4, 4] }), normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: photo('asphalt_rough.jpg', { srgb: false, rep: [4, 4] }), roughness: 0.95, metalness: 0.05, envMapIntensity: 1.1 }),
-  ground: new THREE.MeshStandardMaterial({ map: photo('grass_diff.jpg', { rep: [24, 1] }), color: '#6b5a52', roughness: 0.95 }),
-  walk: new THREE.MeshStandardMaterial({ map: photo('walk_diff.jpg'), normalMap: photo('walk_nor.jpg', { srgb: false }), color: '#b8aeb4', roughness: 0.85 }),
-  concrete: new THREE.MeshStandardMaterial({ map: photo('concrete_diff.jpg', { rep: [0.25, 0.25] }), color: '#b0a8ac', roughness: 0.85, side: THREE.DoubleSide }),
-  ramp: new THREE.MeshStandardMaterial({ map: hazardTex, roughness: 0.5, metalness: 0.3, side: THREE.DoubleSide }),
-  water: new THREE.MeshStandardMaterial({ color: '#0f3a52', roughness: 0.06, metalness: 0.4, envMapIntensity: 1.4 }),
-  dirt: new THREE.MeshStandardMaterial({ color: '#3a2a22', roughness: 1, side: THREE.DoubleSide }),
+// shared materials, created on first use so a stage only loads the photos it needs
+const MATS = {
+  road: () => new THREE.MeshStandardMaterial({ map: roadTex, normalMap: photo(`${ROAD.tex || 'asphalt'}_nor.jpg`, { srgb: false, rep: [4, 4] }), normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: ROAD.tex ? null : photo('asphalt_rough.jpg', { srgb: false, rep: [4, 4] }), roughness: 0.95, metalness: 0.05, envMapIntensity: 1.1 }),
+  ground: () => new THREE.MeshStandardMaterial({ map: photo('grass_diff.jpg', { rep: [24, 1] }), color: '#6b5a52', roughness: 0.95 }),
+  walk: () => new THREE.MeshStandardMaterial({ map: photo('walk_diff.jpg'), normalMap: photo('walk_nor.jpg', { srgb: false }), color: '#b8aeb4', roughness: 0.85 }),
+  concrete: () => new THREE.MeshStandardMaterial({ map: photo('concrete_diff.jpg', { rep: [0.25, 0.25] }), color: '#b0a8ac', roughness: 0.85, side: THREE.DoubleSide }),
+  ramp: () => new THREE.MeshStandardMaterial({ map: hazardTex, roughness: 0.5, metalness: 0.3, side: THREE.DoubleSide }),
+  water: () => new THREE.MeshStandardMaterial({ color: '#0f3a52', roughness: 0.06, metalness: 0.4, envMapIntensity: 1.4 }),
+  dirt: () => new THREE.MeshStandardMaterial({ color: '#3a2a22', roughness: 1, side: THREE.DoubleSide }),
 };
+const M = new Proxy({}, { get: (c, k) => (c[k] ??= MATS[k]()) });
 const flat0 = () => 0;
 
 function buildWorld() {
-  // road (with the bridge gap)
-  for (const [a, b] of [[-120, GAP0], [GAP1, FINISH_S + 260]]) {
-    const m = new THREE.Mesh(ribbon(a, b, -ROAD_HALF, ROAD_HALF, 3, flat0, 24), M.road);
-    m.receiveShadow = true; scene.add(m);
+  // road, broken by any gaps
+  let a = -120;
+  for (const g of [...GAPS, { s0: FINISH_S + 260 }]) {
+    const m = new THREE.Mesh(ribbon(a, g.s0, -ROAD_HALF, ROAD_HALF, 3, flat0, 24), M.road);
+    m.receiveShadow = true; scene.add(m); a = g.s1;
   }
-  // ground split by the river
-  for (const [a, b] of [[-400, BRIDGE0], [BRIDGE1, 3500]]) {
-    for (const [l, r] of [[-500, -15.5], [15.5, 500]]) {
-      const g = new THREE.Mesh(ribbon(a, b, l, r, 20, () => -0.05, 20), M.ground); g.receiveShadow = true; scene.add(g);
-    }
-  }
-  // sidewalks
-  for (const [a, b] of [[-120, BRIDGE0], [BRIDGE1, FINISH_S + 260]]) {
-    for (const [l, r] of [[-15.5, -ROAD_HALF], [ROAD_HALF, 15.5]]) {
-      const w = new THREE.Mesh(ribbon(a, b, l, r, 4, () => 0.12, 3.5), M.walk); w.receiveShadow = true; scene.add(w);
-    }
-  }
-  // river + banks
-  scene.add(new THREE.Mesh(ribbon(BRIDGE0 - 1, BRIDGE1 + 1, -500, 500, 10, () => -6), M.water));
-  scene.add(new THREE.Mesh(crossWall(BRIDGE0, -500, 500, -6.2, 0), M.dirt));
-  scene.add(new THREE.Mesh(crossWall(BRIDGE1, -500, 500, -6.2, 0), M.dirt));
-  // bridge deck underside, rails, broken edges, pillars
-  for (const [a, b] of [[BRIDGE0, GAP0], [GAP1, BRIDGE1]]) {
-    scene.add(new THREE.Mesh(ribbon(a, b, -ROAD_HALF - 1, ROAD_HALF + 1, 5, () => -0.9), M.concrete));
-    for (const d of [-ROAD_HALF - 0.6, ROAD_HALF + 0.6]) scene.add(new THREE.Mesh(wall(a, b, d, 4, () => -0.9, () => 1.1), M.concrete));
-  }
-  scene.add(new THREE.Mesh(crossWall(GAP0, -ROAD_HALF - 1, ROAD_HALF + 1, -0.9, 0), M.concrete));
-  scene.add(new THREE.Mesh(crossWall(GAP1, -ROAD_HALF - 1, ROAD_HALF + 1, -0.9, 0), M.concrete));
-  const pillarGeo = new THREE.CylinderGeometry(1.1, 1.3, 6, 12);
-  for (let s = BRIDGE0 + 12; s < BRIDGE1; s += 26) {
-    if (s > GAP0 - 4 && s < GAP1 + 4) continue;
-    for (const d of [-7, 7]) { const p = new THREE.Mesh(pillarGeo, M.concrete); world(s, d, -3.9, p.position); scene.add(p); }
-  }
-  // broken-bridge barriers + sign
-  const barrierMat = new THREE.MeshStandardMaterial({ color: '#ff6a1a', emissive: '#ff4a00', emissiveIntensity: 0.6 });
-  for (const s of [GAP0 - 1.2]) for (let d = -10; d <= 10; d += 10) {
-    const b = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.8, 0.3), barrierMat); world(s, d === 0 ? 14 : d * 1.3, 0.5, b.position); b.rotation.y = frame(s).yaw; scene.add(b);
-  }
-  addBillboard(GAP0 - 140, -17, 9, '다리 끊김! 점프!', '#ff6a1a', 11, 3.4);
-  addBillboard(GAP0 - 320, 17, 9, 'BRIDGE OUT', '#ff6a1a', 11, 3.4);
-
   // ramps
   for (const r of RAMPS) {
     const top = new THREE.Mesh(ribbon(r.s0, r.s0 + r.len, r.dL, r.dR, 2, (s) => r.h * (s - r.s0) / r.len, 4), M.ramp);
@@ -318,10 +332,17 @@ function buildWorld() {
     for (const d of [r.dL, r.dR]) scene.add(new THREE.Mesh(wall(r.s0, r.s0 + r.len, d, 2, () => 0, (s) => r.h * (s - r.s0) / r.len), M.concrete));
     scene.add(new THREE.Mesh(crossWall(r.s0 + r.len, r.dL, r.dR, 0, r.h), M.concrete));
   }
-
-  buildBuildings();
-  buildStreetlights();
-  buildLandmarks();
+  // start + finish lines
+  const checker = canvasTex(256, 64, (g, w, h) => { for (let x = 0; x < 16; x++) for (let y = 0; y < 4; y++) { g.fillStyle = (x + y) % 2 ? '#111' : '#f4f4f4'; g.fillRect(x * 16, y * 16, 16, 16); } });
+  for (const s of [12, FINISH_S]) scene.add(new THREE.Mesh(ribbon(s, s + 3, -ROAD_HALF, ROAD_HALF, 3, () => 0.02), new THREE.MeshStandardMaterial({ map: checker, roughness: 0.6 })));
+  ST.build(kit);
+}
+function finishArch(text) {
+  const archMat = new THREE.MeshStandardMaterial({ color: '#1a1a22', metalness: 0.8, roughness: 0.3 });
+  const half = ROAD_HALF + 1.5;
+  for (const d of [-half, half]) { const p = new THREE.Mesh(new THREE.BoxGeometry(1.2, 10, 1.2), archMat); world(FINISH_S, d, 5, p.position); p.rotation.y = frame(FINISH_S).yaw; scene.add(p); }
+  const ban = new THREE.Mesh(new THREE.PlaneGeometry(half * 2 + 1, 3.2), new THREE.MeshBasicMaterial({ map: textTex(text, '#38f5ff', { w: 1024, h: 120, size: 70, bg: '#0b0716' }), toneMapped: false, side: THREE.DoubleSide }));
+  ban.material.color.setScalar(1.6); world(FINISH_S, 0, 9.4, ban.position); ban.lookAt(world(FINISH_S - 50, 0, 9.4)); scene.add(ban);
 }
 
 function addBillboard(s, d, y, text, color, w = 8, h = 2.6) {
@@ -338,11 +359,6 @@ function addBillboard(s, d, y, text, color, w = 8, h = 2.6) {
   return m;
 }
 
-const NEON = [['6TH ST', '#ff3d9a'], ['LIVE MUSIC', '#38f5ff'], ['DOGE BBQ', '#ffc83d'], ['KEEP AUSTIN WEIRD', '#b07dff'], ['TACOS', '#ff7a3d'], ['GPU PAWN', '#3dff9a'], ['ROBOTAXI', '#ffffff'], ['라이다 수리점', '#ff3d6e'], ['QUESO 24H', '#ffc83d'], ['H100 삽니다', '#3dff9a']];
-const neonMats = NEON.map(([t, c]) => {
-  const m = new THREE.MeshBasicMaterial({ map: textTex(t, c, { size: t.length > 9 ? 56 : 84 }), transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
-  m.color.setScalar(2.2); return m;
-});
 // tile = metres covered by one texture repeat, grid = window cells per tile (for lighting random windows)
 const FACADES = [
   { name: '006', tile: [28, 28], grid: [12, 8], mask: 'dark', lit: 0.3, metal: 0.55, rough: 0.18, hue: 0.55 },
@@ -380,102 +396,23 @@ function facadeMat(f) {
   };
   return mat;
 }
-function buildBuildings() {
-  const items = [];
-  for (let s = -60; s < FINISH_S + 150; s += Q.bStep) {
-    if (s > BRIDGE0 - 30 && s < BRIDGE1 + 30) continue;
-    for (const side of [-1, 1]) {
-      if (side < 0 && s < 170) continue; // Giga Texas lot
-      const downtown = s > 1500 && s < 2400, sixth = s > 550 && s < 1500;
-      const h = downtown ? 30 + Math.random() * 110 : sixth ? 9 + Math.random() * 16 : 6 + Math.random() * 14;
-      const dp = 10 + Math.random() * 12, w = Q.bStep * (0.6 + Math.random() * 0.35);
-      const face = ROAD_HALF + 5 + Math.random() * 3;
-      items.push({ s, d: side * (face + dp / 2), h, dp, w, side, face, sixth, downtown });
-      // back row skyline
-      if (Math.random() < 0.7) items.push({ s: s + Q.bStep / 2, d: side * (face + dp + 14 + Math.random() * 30), h: h * (1 + Math.random()), dp: 14, w: Q.bStep * 0.8, side });
-    }
-  }
+// buildings: kinds[k] = list of { s, d, h, dp, w, y? } boxes drawn with FACADES[k]
+function placeBuildings(kinds) {
   const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, 0.5, 0);
-  // photo facades; each building picks one by district
-  const kinds = FACADES.map(() => []);
-  for (const b of items) {
-    const k = b.downtown ? (Math.random() < 0.55 ? 0 : 1) : b.sixth ? (Math.random() < 0.7 ? 2 : 3) : (Math.random() < 0.6 ? 3 : 2);
-    kinds[b.face ? k : (b.h > 40 ? 1 : k)].push(b);
-  }
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color();
   kinds.forEach((list, k) => {
     if (!list.length) return;
     const inst = new THREE.InstancedMesh(geo, facadeMat(FACADES[k]), list.length);
     list.forEach((b, i) => {
-      world(b.s, b.d, 0, p); q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, frame(b.s).yaw);
+      world(b.s, b.d, b.y || 0, p); q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, frame(b.s).yaw);
       sc.set(b.dp, b.h, b.w); m4.compose(p, q, sc); inst.setMatrixAt(i, m4);
       inst.setColorAt(i, col.setHSL(FACADES[k].hue + (Math.random() - 0.5) * 0.04, 0.1, 0.42 + Math.random() * 0.16));
     });
     inst.receiveShadow = true;
     scene.add(inst);
   });
-  // neon signs on the road-facing side
-  const signGeo = new THREE.PlaneGeometry(7, 2.2);
-  for (const b of items) {
-    if (!b.face || !(b.sixth || b.downtown || Math.random() < 0.25) || Math.random() < 0.35) continue;
-    const m = new THREE.Mesh(signGeo, neonMats[(Math.random() * neonMats.length) | 0]);
-    const y = 4 + Math.random() * Math.min(6, b.h - 3);
-    world(b.s, b.side * (b.face - 0.25), y, m.position);
-    m.lookAt(world(b.s, 0, y)); scene.add(m);
-  }
 }
-function buildStreetlights() {
-  const poleGeo = new THREE.CylinderGeometry(0.12, 0.16, 8, 6); poleGeo.translate(0, 4, 0);
-  const bulbGeo = new THREE.SphereGeometry(0.42, 10, 8);
-  const list = [];
-  for (let s = 0; s < FINISH_S + 100; s += 36) for (const side of [-1, 1]) list.push([s + (side > 0 ? 18 : 0), side]);
-  const poles = new THREE.InstancedMesh(poleGeo, new THREE.MeshStandardMaterial({ color: '#2b2a30', metalness: 0.7, roughness: 0.4 }), list.length);
-  const bulbMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 2.4, 1.5), toneMapped: false });
-  const bulbs = new THREE.InstancedMesh(bulbGeo, bulbMat, list.length);
-  const m4 = new THREE.Matrix4(), p = new THREE.Vector3();
-  list.forEach(([s, side], i) => {
-    const bridge = s > BRIDGE0 && s < BRIDGE1;
-    world(s, side * (bridge ? 13.2 : 14), bridge ? 1 : 0.1, p); m4.makeTranslation(p.x, p.y, p.z); poles.setMatrixAt(i, m4);
-    world(s, side * 12.6, p.y + 7.8, p); m4.makeTranslation(p.x, p.y, p.z); bulbs.setMatrixAt(i, m4);
-  });
-  scene.add(poles, bulbs);
-}
-function buildLandmarks() {
-  // Giga Texas
-  const giga = new THREE.Mesh(new THREE.BoxGeometry(70, 22, 200), new THREE.MeshStandardMaterial({ color: '#b9b6c4', roughness: 0.55, metalness: 0.2 }));
-  world(60, -58, 11, giga.position); giga.rotation.y = frame(60).yaw; giga.castShadow = false; giga.receiveShadow = true; scene.add(giga);
-  const gs = new THREE.Mesh(new THREE.PlaneGeometry(40, 7), new THREE.MeshBasicMaterial({ map: textTex('GIGA TEXAS', '#ff2a3a', { w: 1024, h: 180, size: 130, glow: 18 }), transparent: true, toneMapped: false }));
-  gs.material.color.setScalar(2); world(60, -22.9, 14, gs.position); gs.lookAt(world(60, 0, 14)); scene.add(gs);
-  // start + finish lines
-  const checker = canvasTex(256, 64, (g, w, h) => { for (let x = 0; x < 16; x++) for (let y = 0; y < 4; y++) { g.fillStyle = (x + y) % 2 ? '#111' : '#f4f4f4'; g.fillRect(x * 16, y * 16, 16, 16); } });
-  for (const s of [12, FINISH_S]) {
-    const m = new THREE.Mesh(ribbon(s, s + 3, -ROAD_HALF, ROAD_HALF, 3, () => 0.02), new THREE.MeshStandardMaterial({ map: checker, roughness: 0.6 }));
-    scene.add(m);
-  }
-  // finish arch
-  const archMat = new THREE.MeshStandardMaterial({ color: '#1a1a22', metalness: 0.8, roughness: 0.3 });
-  for (const d of [-13.5, 13.5]) { const p = new THREE.Mesh(new THREE.BoxGeometry(1.2, 10, 1.2), archMat); world(FINISH_S, d, 5, p.position); p.rotation.y = frame(FINISH_S).yaw; scene.add(p); }
-  const ban = new THREE.Mesh(new THREE.PlaneGeometry(28, 3.2), new THREE.MeshBasicMaterial({ map: textTex('FINISH · 텍사스 주의회 의사당', '#38f5ff', { w: 1024, h: 120, size: 70, bg: '#0b0716' }), toneMapped: false, side: THREE.DoubleSide }));
-  ban.material.color.setScalar(1.6); world(FINISH_S, 0, 9.4, ban.position); ban.lookAt(world(FINISH_S - 50, 0, 9.4)); scene.add(ban);
-  // Texas State Capitol
-  const capMat = new THREE.MeshStandardMaterial({ color: '#d8a48c', roughness: 0.7, emissive: '#5a2a1a', emissiveIntensity: 0.25 });
-  const cap = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.BoxGeometry(90, 18, 40), capMat); base.position.y = 9; cap.add(base);
-  const drum = new THREE.Mesh(new THREE.CylinderGeometry(12, 13, 16, 32), capMat); drum.position.y = 26; cap.add(drum);
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(12, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), capMat); dome.position.y = 34; cap.add(dome);
-  const lant = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2, 7, 12), capMat); lant.position.y = 49; cap.add(lant);
-  const star = new THREE.Mesh(new THREE.SphereGeometry(1.2, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 3, 1.5), toneMapped: false })); star.position.y = 53.5; cap.add(star);
-  world(FINISH_S + 330, 0, 0, cap.position); cap.rotation.y = frame(FINISH_S + 330).yaw; scene.add(cap);
-  // trees by the river
-  const treeGeo = new THREE.ConeGeometry(2.4, 7, 7); treeGeo.translate(0, 3.5, 0);
-  const trees = new THREE.InstancedMesh(treeGeo, new THREE.MeshStandardMaterial({ color: '#1f3a2c', roughness: 0.9 }), 120);
-  const m4 = new THREE.Matrix4(), p = new THREE.Vector3();
-  for (let i = 0; i < 120; i++) {
-    const s = (i % 2 ? BRIDGE1 + 4 + Math.random() * 60 : BRIDGE0 - 4 - Math.random() * 60), d = (Math.random() < 0.5 ? -1 : 1) * (18 + Math.random() * 120);
-    world(s, d, 0, p); const k = 0.7 + Math.random() * 0.8; m4.makeScale(k, k * (0.8 + Math.random() * 0.6), k).setPosition(p); trees.setMatrixAt(i, m4);
-  }
-  scene.add(trees);
-}
+const kit = { THREE, scene, Q, IS_MOBILE, M, world, frame, ribbon, wall, crossWall, grid, photo, canvasTex, textTex, addBillboard, FACADES, facadeMat, placeBuildings, finishArch };
 
 // ---------- vehicles ----------
 // ---------- pickups ----------
@@ -539,70 +476,121 @@ const radioQueue = [];
 const radioFlags = new Set();
 
 function resetRace() {
-  Object.assign(P, { s: 0, d: 3, y: 0, v: 0, vy: 0, grounded: true, charges: maxCharges(), recharge: 0, fuel: AIR_FUEL, slope: 0, air: 0, boostT: 0, boostG: 30, crashT: 0, shake: 0, steerVis: 0, roll: 0, rollTo: 0, rollDir: 1, finished: false, coil: 0 });
+  Object.assign(P, { s: 0, d: 3, y: 0, v: 0, vy: 0, grounded: true, charges: maxCharges(), recharge: 0, fuel: AIR_FUEL, slope: 0, air: 0, boostT: 0, boostG: 30, crashT: 0, shake: 0, steerVis: 0, roll: 0, rollTo: 0, rollDir: 1, finished: false, coil: 0, bonkT: 0, roofRun: 0 });
   boss?.reset();
-  raceT = 0; penalty = 0;
-  Object.assign(stats, { perfect: 0, coins: 0, xpGain: 0, dogeGain: 0, jumpsOver: 0 });
+  raceT = 0; penalty = 0; swarmDone = false;
+  Object.assign(stats, { perfect: 0, coins: 0, xpGain: 0, dogeGain: 0, jumpsOver: 0, roofs: 0 });
   radioFlags.clear(); radioQueue.length = 0;
-  for (const t of traffic) scene.remove(t.mesh);
+  for (const t of traffic) if (t.mesh) scene.remove(t.mesh);
+  for (const f of jamFleets) scene.remove(f);
   for (const p of pickups) scene.remove(p.mesh);
   spawnTraffic(); spawnPickups();
 }
 // who's on the road: real car models where they loaded, procedural stand-ins otherwise
-const TRAFFIC = {
-  waymo: { car: 'ioniq5', kit: true, name: '웨이모', speed: [20, 24], brakes: true, n: 9 },
-  robotaxi: { car: 'modely', name: '테슬라 로보택시', speed: [31, 35], color: '#f2f2f0', n: 4 },
-  model3: { car: 'model3', name: '모델 3', speed: [26, 32], n: 3 },
-  cybertruck: { car: 'cybertruck', name: '사이버트럭', speed: [24, 29], n: 2 },
-  dolphin: { car: 'dolphin', name: 'BYD 돌핀', speed: [29, 35], n: 3 },
-  sealion: { car: 'sealion7', name: 'BYD 씰라이언', speed: [28, 33], n: 3 },
-  bus: { car: 'torino', name: 'BYD 전기버스', speed: [14, 17], n: 2 },
-};
+const TRAFFIC = ST.traffic;
 const trafficProtos = {};
+const lodProtos = {}; // simplified copies for parked jams
 const trafficReady = Promise.all(Object.entries(TRAFFIC).map(async ([k, d]) => {
   try { const pr = await loadCar(d.car); trafficProtos[k] = d.kit ? addSensorKit(pr) : pr; }
   catch (e) { console.warn('traffic model failed, using stand-in', k, e); }
+  if (ST.jams && ST.jamMix?.[k]) try { const pr = await loadCar(d.car, true); lodProtos[k] = d.kit ? addSensorKit(pr) : pr; } catch { lodProtos[k] = trafficProtos[k]; }
 }));
+const JAMS = ST.jams || [];
+const inJam = (s, pad = 5) => JAMS.some(([a, b]) => s > a - pad && s < b + pad);
+const randLane = () => LANES[(Math.random() * LANES.length) | 0];
+const TRAFFIC_MAX_S = ST.trafficMaxS ?? FINISH_S + 200;
+let jamFleets = [], swarmDone = false;
+let standIns = null;
+function trafficMesh(type, color) {
+  const d = TRAFFIC[type];
+  if (trafficProtos[type]) return instance(trafficProtos[type], color ?? d.color);
+  standIns ??= { w: makeWaymo(), c: makeCybercab() };
+  const pr = d.brakes ? standIns.w : standIns.c;
+  const mesh = pr.clone();
+  const tail = pr.userData.tail.clone();
+  mesh.traverse((o) => { if (o.name === 'tail') o.material = tail; });
+  mesh.userData = { tail, pivot: mesh.getObjectByName('pivot'), wheels: [], size: new THREE.Vector3(2.1, 1.6, 4.7) };
+  return mesh;
+}
+// one car on the road; opts: { v, parked, temp, copy, color, name }
+function addTraffic(type, s, d, opts = {}) {
+  const def = TRAFFIC[type];
+  const mesh = opts.parked ? null : trafficMesh(type, opts.color);
+  const sz = mesh ? mesh.userData.size : trafficProtos[type].userData.size;
+  const base = opts.v ?? def.speed[0] + Math.random() * (def.speed[1] - def.speed[0]);
+  const t = { type, name: opts.name || def.name, brakes: !!def.brakes && !opts.parked, hl: sz.z / 2, hw: sz.x / 2, h: Math.min(sz.y, 3.6), s, d, dT: d, y: 0, base, v: opts.parked ? 0 : base, brakeT: 0, cool: 0, over: false, mesh, parked: !!opts.parked, temp: !!opts.temp, copy: !!opts.copy, copyT: 0 };
+  if (mesh) scene.add(mesh);
+  traffic.push(t);
+  return t;
+}
 function spawnTraffic() {
-  traffic = [];
-  const wProto = makeWaymo(), cProto = makeCybercab();
+  traffic = []; jamFleets = [];
   const roster = Object.entries(TRAFFIC).flatMap(([k, d]) => Array(d.n).fill(k));
   for (let i = roster.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [roster[i], roster[j]] = [roster[j], roster[i]]; }
   roster.forEach((type, i) => {
-    const d = TRAFFIC[type];
-    let mesh;
-    if (trafficProtos[type]) mesh = instance(trafficProtos[type], d.color);
-    else {
-      const pr = d.brakes ? wProto : cProto;
-      mesh = pr.clone();
-      const tail = pr.userData.tail.clone();
-      mesh.traverse((o) => { if (o.name === 'tail') o.material = tail; });
-      mesh.userData = { tail, pivot: mesh.getObjectByName('pivot'), wheels: [], size: new THREE.Vector3(2.1, 1.6, 4.7) };
-    }
-    const sz = mesh.userData.size;
-    const t = { type, name: d.name, brakes: !!d.brakes, hl: sz.z / 2, hw: sz.x / 2, h: Math.min(sz.y, 3.6), s: 180 + i * 85 + Math.random() * 40, d: 0, dT: 0, y: 0, base: d.speed[0] + Math.random() * (d.speed[1] - d.speed[0]), v: 0, brakeT: 0, cool: 0, over: false, mesh };
-    t.v = t.base; t.d = t.dT = LANES[(Math.random() * 4) | 0];
-    if (t.s > GAP0 - 70) t.s -= 900;
-    scene.add(mesh); traffic.push(t);
+    let s = 180 + i * 85 + Math.random() * 40;
+    if (s > TRAFFIC_MAX_S - 30) s -= 900;
+    for (const [a, b] of JAMS) if (s > a - 40 && s < b + 5) s = b + 20 + Math.random() * 40;
+    addTraffic(type, s, randLane());
   });
+  // parked jams: every lane bumper to bumper, a few holes; drawn as instanced fleets
+  const mix = Object.entries(ST.jamMix || {}).filter(([k]) => trafficProtos[k]);
+  const total = mix.reduce((a, [, w]) => a + w, 0);
+  const pick = () => { let r = Math.random() * total; for (const [k, w] of mix) if ((r -= w) <= 0) return k; return mix[0][0]; };
+  const byType = {};
+  if (mix.length) JAMS.forEach(([a, b], ji) => { for (const d of LANES) {
+    let s = a + Math.random() * 4;
+    while (s < b) {
+      if (Math.random() < 0.05) { s += 10; continue; }
+      const type = pick(), hl = trafficProtos[type].userData.size.z / 2;
+      const t = addTraffic(type, s + hl, d + (Math.random() - 0.5) * 0.6, { parked: true });
+      (byType[ji + ':' + type] ??= []).push(t);
+      s += hl * 2 + 1.6 + Math.random() * 1.6;
+    }
+  } });
+  const q = new THREE.Quaternion(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
+  const blobs = [];
+  for (const [key, list] of Object.entries(byType)) {
+    const [ji, type] = key.split(':');
+    const f = fleet(lodProtos[type] || trafficProtos[type], list.map((t) => ({ m: new THREE.Matrix4().compose(world(t.s, t.d, 0, p), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, frame(t.s).yaw + (Math.random() - 0.5) * 0.06), one), color: TRAFFIC[type].color })));
+    f.traverse((o) => { o.castShadow = false; });
+    f.userData.jam = JAMS[+ji]; scene.add(f); jamFleets.push(f);
+    blobs.push(...list);
+  }
+  // contact shadows under the parked cars (they don't cast real ones: too many triangles)
+  if (blobs.length) {
+    const geo = new THREE.PlaneGeometry(1, 1); geo.rotateX(-Math.PI / 2);
+    const im = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ map: blobShadowTex(), transparent: true, depthWrite: false, opacity: 0.85 }), blobs.length);
+    const sc = new THREE.Vector3();
+    blobs.forEach((t, i) => { im.setMatrixAt(i, new THREE.Matrix4().compose(world(t.s, t.d, 0.03, p), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, frame(t.s).yaw), sc.set(t.hw * 2.5, 1, t.hl * 2.3))); });
+    im.renderOrder = -1; scene.add(im); jamFleets.push(im);
+  }
+}
+// copycats: identical clones that steer into your lane
+function spawnSwarm() {
+  const sw = ST.swarm; swarmDone = true;
+  if (!trafficProtos[sw.type]) return;
+  for (let i = 0; i < sw.n; i++) addTraffic(sw.type, P.s + 80 + i * 18 + Math.random() * 8, randLane(), { v: Math.max(24, P.v * 0.72), temp: true, copy: true, color: sw.color, name: sw.name });
+  toast(sw.name.toUpperCase(), '똑같이 생긴 차가 우르르!', '#ff6a1a');
 }
 function addPickup(type, s, d, y) {
   const mesh = pickupProtos[type].clone();
   mesh.userData.fans = []; mesh.traverse((o) => { if (o.name === 'rotor') mesh.userData.fans.push(o); });
   scene.add(mesh); pickups.push({ type, s, d, y, mesh, taken: false, phase: Math.random() * 6 });
 }
+const nearGap = (s) => GAPS.some((g) => s > g.s0 - 30 && s < g.s1 + 10);
 function spawnPickups() {
   pickups = [];
-  // coin lines
+  // coin lines (up on the roofs through a jam)
   for (let s = 90; s < FINISH_S - 40; s += 70 + Math.random() * 50) {
-    if (s > GAP0 - 30 && s < GAP1 + 10) continue;
-    const d = LANES[(Math.random() * 4) | 0], n = 5 + ((Math.random() * 4) | 0);
-    for (let i = 0; i < n; i++) addPickup('coin', s + i * 5, d, 1.1 + groundAt(s + i * 5, d));
+    if (nearGap(s)) continue;
+    const d = randLane(), n = 5 + ((Math.random() * 4) | 0);
+    for (let i = 0; i < n; i++) addPickup('coin', s + i * 5, d, 1.1 + groundAt(s + i * 5, d) + (inJam(s + i * 5, 0) ? 1.7 : 0));
   }
   // GPUs scattered
   for (let s = 150; s < FINISH_S - 40; s += 55 + Math.random() * 45) {
-    if (s > GAP0 - 30 && s < GAP1 + 10) continue;
-    addPickup('gpu', s, LANES[(Math.random() * 4) | 0] + (Math.random() - 0.5) * 2, 1.2);
+    if (nearGap(s)) continue;
+    addPickup('gpu', s, randLane() + (Math.random() - 0.5) * 2, 1.2 + (inJam(s, 0) ? 1.7 : 0));
   }
   // H100 above ramp flight paths, air tanks before ramps
   for (const r of RAMPS) {
@@ -610,9 +598,10 @@ function spawnPickups() {
     if (r.dR - r.dL < 20) addPickup('h100', r.s0 + r.len + 18, d, r.h + 2.2);
     addPickup('air', r.s0 - 45, d, 1.2);
   }
-  addPickup('legend', 1120 + 16 + 30, 1.5, 11);   // only reachable with ramp + jump
-  // coin arc over the bridge gap
-  for (let i = 0; i < 9; i++) { const s = GAP0 - 4 + i * 5.2, x = (s - (GAP0 - 4)) / 42; addPickup('coin', s, 0, 3 + 7 * Math.sin(Math.PI * x)); }
+  if (ST.legend) addPickup('legend', ST.legend.s, ST.legend.d, ST.legend.y);   // only reachable with ramp + jump
+  for (const [type, ps, pd, py] of ST.pickups || []) addPickup(type, ps, pd, py);
+  // coin arcs over gaps
+  for (const g of GAPS) for (let i = 0; i < 9; i++) { const s = g.s0 - 4 + i * 5.2, x = (s - (g.s0 - 4)) / 42; addPickup('coin', s, 0, 3 + 7 * Math.sin(Math.PI * x)); }
 }
 
 // ---------- input ----------
@@ -741,15 +730,7 @@ function updateHUD() {
 const fmtTime = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}`;
 
 // ---------- simulation ----------
-const RADIO_SCRIPT = [
-  [25, '오스틴에 온 걸 환영해. 로보택시가 처음 달리기 시작한 도시야.'],
-  [190, '노란 경사로 보이면 점프! 공중에서 버튼을 꾹 누르면 사뿐히 착지해.'],
-  [330, '저 하얀 웨이모들 지붕에 도는 거 보이지? 라이다야. 빨간 빛에 걸리면 겁먹고 급정거해.'],
-  [600, '6번가야. 도지코인은 상점에서 쓸 거니까 싹 다 주워.'],
-  [1050, '저 위에 보라색으로 빛나는 거, 전설의 블랙웰 칩이야. 큰 경사로에서 점프 버튼까지 같이 눌러봐.'],
-  [1550, '다운타운이야. 이 빌딩들 전부 데이터센터로 바꾸면 딱인데.'],
-  [2330, '다리가 끊겼어! 텍사스 교통국 또 일 안 했네. 속도 유지하고 경사로에서 점프!'],
-];
+const RADIO_SCRIPT = ST.radio;
 function step(dt) {
   raceT += dt;
   if (boss) { boss.update(dt); if (input.fireEdge) { input.fireEdge = false; if (!boss.fireCoil() && boss.B.active) floatText('코일 충전 중…'); } }
@@ -794,7 +775,7 @@ function step(dt) {
   } else if (P.charges >= maxCharges()) P.recharge = 0;
 
   P.thrusting = false;
-  const g = carGround(P.s, P.d);
+  const g = carGround(P.s, P.d, P.y);
   if (P.grounded) {
     if (g < P.y - 0.3) { // left a ramp top or a broken bridge
       P.grounded = false; P.vy = P.slope * P.v; P.air = 0;
@@ -821,21 +802,57 @@ function step(dt) {
     if (P.y <= g) land(g);
     if (P.y < -5.5) splash();
   }
+  // overpasses and sign gantries: solid overhead, except their holes
+  P.bonkT -= dt;
+  for (const c of CEILINGS) {
+    if (P.s < c.s0 || P.s > c.s1 || P.y + 1.3 < c.y0 || P.y > c.y1 - 0.05) continue;
+    const hole = c.holes?.find((h) => ((P.d - h.d) / h.rx) ** 2 + ((P.y + 0.65 - h.y) / h.ry) ** 2 < 1);
+    if (hole) {
+      if (!radioFlags.has(hole)) {
+        radioFlags.add(hole); const b = ST.holeBonus;
+        toast(b.text, b.sub, '#ffc83d'); gainXP(b.xp); save.doge += b.doge; stats.dogeGain += b.doge; writeSaveSoon();
+        P.boostT = Math.max(P.boostT, 1.5); blip(520, 1560, 0.5, 'triangle', 0.18);
+      }
+      continue;
+    }
+    if (P.bonkT > 0) continue;
+    const under = P.y + 1.3 - c.y0 < 0.9, face = P.s - P.v * dt * 1.5 < c.s0;
+    if (!under && !face) continue; // came down onto it from above: the deck is a floor (roofAt)
+    P.bonkT = 0.5; P.shake = 0.7; P.v *= 0.45; P.vy = Math.min(P.vy, -3); P.grounded = false;
+    if (under) P.y = c.y0 - 1.35; else P.s = c.s0 - 0.4; // underside: pushed down; face: stopped
+    toast('쿵!', `${c.what}에 부딪힘`, '#ff3d6e'); blip(150, 40, 0.3, 'square', 0.18);
+  }
+  if (ST.swarm && !swarmDone && P.s > ST.swarm.at) spawnSwarm();
 
   // traffic
   for (const t of traffic) {
-    if (t.brakeT > 0) { t.brakeT -= dt; t.v = Math.max(0, t.v - 60 * dt); if (t.brakeT <= 0) t.cool = 3; }
-    else t.v += (t.base - t.v) * Math.min(1, dt * 0.8);
-    t.cool -= dt;
-    t.s += t.v * dt;
-    // lidar (and the robotaxi's cameras) see the ramp ahead and change lane
-    const ahead = RAMPS.find((r) => r.s0 - t.s > 0 && r.s0 - t.s < 45 && t.dT + 1.2 > r.dL && t.dT - 1.2 < r.dR);
-    if (ahead) { const free = LANES.filter((l) => !RAMPS.some((r) => Math.abs(r.s0 - ahead.s0) < 2 && l + 1.2 > r.dL && l - 1.2 < r.dR)); if (free.length) t.dT = free.reduce((a, b) => (Math.abs(b - t.d) < Math.abs(a - t.d) ? b : a)); }
-    t.d += THREE.MathUtils.clamp(t.dT - t.d, -6 * dt, 6 * dt);
-    t.y = carGround(t.s, t.d);
-    if (t.s < P.s - 80 || t.s > GAP0 - 40) {
-      t.s = Math.min(GAP0 - 60, P.s + 320 + Math.random() * 380); t.d = t.dT = LANES[(Math.random() * 4) | 0]; t.over = false; t.brakeT = 0; t.v = t.base;
-      if (t.s < P.s + 120) t.s = P.s - 100; // nothing left ahead: park it behind
+    if (!t.parked) {
+      if (t.brakeT > 0) { t.brakeT -= dt; t.v = Math.max(0, t.v - 60 * dt); if (t.brakeT <= 0) t.cool = 3; }
+      else {
+        // keep a gap to whoever is ahead in the lane (jams back up naturally)
+        let target = t.base, lead = null;
+        for (const o of traffic) if (o !== t && o.s > t.s && o.s - t.s < 45 && Math.abs(o.d - t.dT) < 2.8 && (!lead || o.s < lead.s)) lead = o;
+        if (lead) { const gap = lead.s - t.s - lead.hl - t.hl; if (gap < 14) target = Math.min(target, Math.max(0, lead.v + (gap - 4) * 0.8)); }
+        t.v += (target - t.v) * Math.min(1, dt * (target < t.v ? 3 : 0.8));
+      }
+      t.cool -= dt;
+      t.s += t.v * dt;
+      // lidar (and the robotaxi's cameras) see the ramp ahead and change lane
+      const ahead = RAMPS.find((r) => r.s0 - t.s > 0 && r.s0 - t.s < 45 && t.dT + 1.2 > r.dL && t.dT - 1.2 < r.dR);
+      if (ahead) { const free = LANES.filter((l) => !RAMPS.some((r) => Math.abs(r.s0 - ahead.s0) < 2 && l + 1.2 > r.dL && l - 1.2 < r.dR)); if (free.length) t.dT = free.reduce((a, b) => (Math.abs(b - t.d) < Math.abs(a - t.d) ? b : a)); }
+      else if (t.copy) {
+        // copycats mirror your lane, a beat late
+        t.copyT -= dt;
+        if (t.copyT <= 0 && t.s - P.s > 10 && t.s - P.s < 140) { t.copyT = 0.5 + Math.random() * 0.7; t.dT = LANES.reduce((a, b) => (Math.abs(b - P.d) < Math.abs(a - P.d) ? b : a)); }
+      }
+      t.d += THREE.MathUtils.clamp(t.dT - t.d, -6 * dt, 6 * dt);
+      t.y = carGround(t.s, t.d);
+      if (t.temp && t.s < P.s - 80) { t.dead = true; scene.remove(t.mesh); continue; }
+      if (t.s < P.s - 80 || t.s > TRAFFIC_MAX_S) {
+        t.s = Math.min(TRAFFIC_MAX_S - 20, P.s + 320 + Math.random() * 380); t.d = t.dT = randLane(); t.over = false; t.brakeT = 0; t.v = t.base;
+        for (const [a, b] of JAMS) if (t.s > a - 40 && t.s < b + 5) t.s = b + 20 + Math.random() * 40;
+        if (t.s < P.s + 120) t.s = P.s - 100; // nothing left ahead: park it behind
+      }
     }
     const ds = t.s - P.s, dd = Math.abs(t.d - P.d);
     if (t.brakes && t.brakeT <= 0 && t.cool <= 0 && ds > -6 && ds < 26 && dd < 6.5 && P.y < 2) {
@@ -844,10 +861,17 @@ function step(dt) {
       else if (Math.random() < 0.3) floatText('웨이모: 장애물 감지!');
     }
     if (Math.abs(ds) < t.hl + 2.2 && dd < t.hw + 1) {
-      if (P.y - t.y < t.h) crash(t);
-      else if (!t.over) { t.over = true; stats.jumpsOver++; gainXP(15, '자율주행차 뛰어넘기 +15 EXP'); P.boostG = Math.min(100, P.boostG + 15); blip(600, 900, 0.12); }
+      if (P.y - t.y < t.h - 0.55) { if (ds > -t.hl * 0.5) crash(t); }
+      else if (!t.over) {
+        t.over = true;
+        if (P.grounded) { // driving across roofs
+          stats.roofs++; P.roofRun++; gainXP(3); P.boostG = Math.min(100, P.boostG + 4);
+          if (P.roofRun % 5 === 0) floatText(`지붕 질주 ×${P.roofRun}`);
+        } else { stats.jumpsOver++; gainXP(15, '차 뛰어넘기 +15 EXP'); P.boostG = Math.min(100, P.boostG + 15); blip(600, 900, 0.12); }
+      }
     }
   }
+  if (traffic.some((t) => t.dead)) traffic = traffic.filter((t) => !t.dead);
 
   // pickups
   const R = magnetRange(), cy = P.y + 0.7;
@@ -873,6 +897,7 @@ function step(dt) {
 }
 function land(g) {
   const impact = -P.vy;
+  if (g < 0.5) P.roofRun = 0;
   P.y = g; P.grounded = true; P.vy = 0;
   const base = world(P.s, P.d, P.y);
   if (P.air > 0.45 && impact < 11.5) {
@@ -893,7 +918,7 @@ function withWa(w) {
   return batchim ? '과' : '와';
 }
 function crash(t) {
-  P.v = Math.min(P.v * 0.45, t.v + 2); P.s = t.s - t.hl - 2.3; P.crashT = 0.8; P.shake = 0.8;
+  P.v = Math.min(P.v * 0.45, t.v + (t.parked ? 9 : 2)); P.s = t.s - t.hl - 2.3; // parked: enough left to hop onto it P.crashT = 0.8; P.shake = 0.8;
   toast('쾅!', t.name + withWa(t.name) + ' 충돌', '#ff3d6e');
   blip(180, 40, 0.35, 'sawtooth', 0.2);
   const base = world(P.s + 2, P.d, 1);
@@ -902,10 +927,12 @@ function crash(t) {
 function splash() {
   const base = world(P.s, P.d, -6);
   for (let i = 0; i < 30; i++) puff(base, new THREE.Vector3((Math.random() - 0.5) * 10, 6 + Math.random() * 10, (Math.random() - 0.5) * 10), '#bfe9ff', 1.4, 1);
-  toast('풍덩!', '콜로라도강에 빠졌어요 · +3초', '#38f5ff');
-  radio('괜찮아, 로드스터는 방수야. 아마도. 다시 가자!');
+  const [big, small, line] = ST.lines.fall || ['추락!', '+3초', '다시 가자!'];
+  toast(big, small, '#38f5ff');
+  radio(line);
   blip(300, 60, 0.5, 'sine', 0.2);
-  Object.assign(P, { s: GAP0 - 150, y: 0, vy: 0, v: 52, grounded: true, charges: Math.max(P.charges, 1), shake: 0.4 });
+  const gap = GAPS.find((g) => P.s > g.s0 - 60 && P.s < g.s1 + 60) || GAPS[0];
+  Object.assign(P, { s: gap ? gap.respawn : P.s - 100, y: 0, vy: 0, v: 52, grounded: true, charges: Math.max(P.charges, 1), shake: 0.4 });
   penalty += 3;
 }
 function collect(p) {
@@ -921,10 +948,11 @@ function finish() {
   P.finished = true; state = 'finish';
   const t = raceT + penalty;
   const bossWin = !!boss?.B.defeated;
-  const stars = 1 + (bossWin ? 1 : 0) + (t <= 62 || stats.perfect >= 3 ? 1 : 0);
-  const best = save.best && save.best < t ? save.best : t; save.best = best;
+  const stars = 1 + (bossWin ? 1 : 0) + (t <= ST.stars.time || stats.perfect >= (ST.stars.perfect || 3) ? 1 : 0);
+  const prev = save.bests[ST.id];
+  const best = prev && prev < t ? prev : t; save.bests[ST.id] = best;
   writeSave();
-  radio('착지 완벽. 다음 목적지는 LA야. 준비해둬.');
+  radio(ST.lines.finish);
   setTimeout(() => {
     $('rTime').textContent = fmtTime(t);
     $('rBest').textContent = fmtTime(best);
@@ -934,13 +962,15 @@ function finish() {
     $('rXp').textContent = `+${stats.xpGain}`;
     $('rLv').textContent = `LV ${save.level}`;
     $('rBoss').textContent = bossWin ? '격추' : '놓침';
+    $('rRoofs').textContent = stats.roofs;
+    $('rRoofRow').hidden = !JAMS.length; $('rRoofRow2').hidden = !JAMS.length;
     $('results').hidden = false;
   }, 900);
 }
 
 // ---------- render sync ----------
 const tmpV = new THREE.Vector3(), lookV = new THREE.Vector3(), camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
-let orbitT = 0;
+let orbitT = 0, snapCam = false;
 function placeCar() {
   const fr = frame(P.s);
   world(P.s, P.d, P.y, car.position);
@@ -954,13 +984,20 @@ function placeCar() {
   const sr = Math.sin(P.roll), cr = 1 - Math.cos(P.roll);
   car.position.addScaledVector(fr.r, 0.55 * sr).y += 0.55 * cr;
   for (const w of car.userData.wheels) w.children.forEach((c) => (c.rotation.x -= P.v * 0.016));
-  const blob = car.getObjectByName('blob'); if (blob) { blob.visible = groundAt(P.s, P.d) > -100; blob.position.y = 0.03 - P.y + groundAt(P.s, P.d); blob.material.opacity = 0.9 / (1 + Math.max(0, P.y - groundAt(P.s, P.d)) * 0.35); }
-  { const gr = carGround(P.s, P.d); magnetRing.visible = gr > -100 && state !== 'poster'; world(P.s, P.d, gr + 0.06, magnetRing.position); magnetRing.scale.setScalar(magnetRange()); }
+  const under = carGround(P.s, P.d, P.y + 0.01);
+  const blob = car.getObjectByName('blob'); if (blob) { blob.visible = under > -100; blob.position.y = 0.03 - P.y + under; blob.material.opacity = 0.9 / (1 + Math.max(0, P.y - under) * 0.35); }
+  { const gr = under; magnetRing.visible = gr > -100 && state !== 'poster'; world(P.s, P.d, gr + 0.06, magnetRing.position); magnetRing.scale.setScalar(magnetRange()); }
   car.userData.jet.opacity = P.thrusting ? 0.9 : Math.max(0, car.userData.jet.opacity - 0.08);
   car.userData.tail.color.setRGB(input.brake ? 8 : 4, 0.25, 0.35);
 }
+let blobTexCache = null;
+function blobShadowTex() {
+  return blobTexCache ??= canvasTex(128, 128, (g) => { const gr = g.createRadialGradient(64, 64, 6, 64, 64, 64); gr.addColorStop(0, 'rgba(0,0,0,0.8)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.45)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); });
+}
 function syncTraffic(time) {
+  for (const f of jamFleets) if (f.userData.jam) { const [a, b] = f.userData.jam; f.visible = P.s > a - 700 && P.s < b + 60; }
   for (const t of traffic) {
+    if (!t.mesh) continue;
     t.mesh.visible = Math.abs(t.s - P.s) < 380; if (!t.mesh.visible) continue;
     world(t.s, t.d, t.y, t.mesh.position);
     t.mesh.rotation.y = frame(t.s).yaw;
@@ -981,7 +1018,8 @@ function syncPickups(time) {
   }
 }
 // loading-screen staging: the Roadster mid barrel-roll over 6th Street, the boss looming behind
-const POSTER = { s: 820, d: 2.2, y: 3.6 };
+const POSTER = ST.poster;
+const PCAM = Object.assign({ back: 10, side: -3.4, y: 1.3, ahead: 10, lookSide: -2.5, lookY: 5.2, fov: 44 }, POSTER.cam);
 function posterStage(time) {
   world(POSTER.s, POSTER.d, POSTER.y + Math.sin(time * 1.3) * 0.15, car.position);
   car.rotation.order = 'YXZ';
@@ -989,17 +1027,17 @@ function posterStage(time) {
   car.userData.jet.opacity = 0.45 + Math.sin(time * 25) * 0.08;
   const blob = car.getObjectByName('blob'); if (blob) blob.visible = false;
   magnetRing.visible = false;
-  boss?.posterPose(POSTER.s + 30, -5, 10.5, time);
+  boss?.posterPose(POSTER.s + POSTER.boss[0], POSTER.boss[1], POSTER.boss[2], time);
 }
 function updateCamera(dt, time) {
   const fr = frame(P.s);
   if (state === 'poster' && boss) {
     orbitT += dt * 0.05;
     const sway = Math.sin(orbitT) * 1.2;
-    world(POSTER.s - 10, POSTER.d - 3.4 + sway, 1.3, camPos);
+    world(POSTER.s - PCAM.back, POSTER.d + PCAM.side + sway, PCAM.y, camPos);
     camera.position.copy(camPos);
-    world(POSTER.s + 10, POSTER.d - 2.5, 5.2, camLook); camera.lookAt(camLook);
-    camera.fov = 44; camera.updateProjectionMatrix();
+    world(POSTER.s + PCAM.ahead, POSTER.d + PCAM.lookSide, PCAM.lookY, camLook); camera.lookAt(camLook);
+    camera.fov = PCAM.fov; camera.updateProjectionMatrix();
     return;
   }
   if (state === 'poster' || state === 'loading') {
@@ -1013,8 +1051,8 @@ function updateCamera(dt, time) {
   const speedK = P.v / 70;
   tmpV.copy(car.position).addScaledVector(fr.f, -(8.5 + speedK * 2.5)); tmpV.y = Math.max(P.y * 0.7, 0) + 3.4 + speedK * 0.4;
   lookV.copy(car.position).addScaledVector(fr.f, 10); lookV.y = P.y * 0.55 + 1.4;
-  const k = Math.min(1, dt * 7);
-  camPos.lerp(tmpV, k); camLook.lerp(lookV, Math.min(1, dt * 10));
+  const k = snapCam ? 1 : Math.min(1, dt * 7);
+  camPos.lerp(tmpV, k); camLook.lerp(lookV, snapCam ? 1 : Math.min(1, dt * 10)); snapCam = false;
   camera.position.copy(camPos);
   if (P.shake > 0) camera.position.add(new THREE.Vector3((Math.random() - 0.5), (Math.random() - 0.5), 0).multiplyScalar(P.shake * 0.6));
   camera.lookAt(camLook);
@@ -1026,7 +1064,7 @@ function updateCamera(dt, time) {
 const composer = new EffectComposer(renderer);
 composer.setPixelRatio(Q.pr);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth * Q.bloomRes, innerHeight * Q.bloomRes), 0.6, 0.5, 0.9);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth * Q.bloomRes, innerHeight * Q.bloomRes), ENV.bloom ?? 0.6, 0.5, 0.9);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 function resize() {
@@ -1065,7 +1103,21 @@ function openGarage() { renderGarage(); $('garage').hidden = false; $('gClose').
 $('garageBtn').addEventListener('click', openGarage);
 $('garageBtn2').addEventListener('click', openGarage);
 $('gClose').addEventListener('click', () => { $('garage').hidden = true; });
-function refreshSaveLine() { $('saveLine').textContent = `LV ${save.level} · Ð ${save.doge.toLocaleString()}${save.best ? ` · 최고 기록 ${fmtTime(save.best)}` : ''}`; }
+function refreshSaveLine() { const b = save.bests[ST.id]; $('saveLine').textContent = `LV ${save.level} · Ð ${save.doge.toLocaleString()}${b ? ` · 최고 기록 ${fmtTime(b)}` : ''}`; }
+// stage texts, stage picker, next-stage button
+function stageUI() {
+  const T = ST.text;
+  $('pEyebrow').textContent = T.eyebrow; $('pTitle').textContent = T.title; $('pSub').textContent = T.sub;
+  $('pTip').innerHTML = T.tip; $('pTweet').textContent = T.tweet; $('pMeta').textContent = T.meta; $('loadTxt').textContent = T.load;
+  $('hudStage').textContent = T.hud; $('rEyebrow').textContent = T.clear; $('rTitle').textContent = T.clearTitle;
+  const i = ORDER.indexOf(ST), next = ORDER[i + 1];
+  $('rNext').innerHTML = `별 조건: ${ST.stars.text}<br>도지코인은 X 개러지에서 자석, 탱크, 컴프레서, 모터 강화에 써요.${next ? '' : ' 다음 스테이지는 다음 업데이트에서 열려요.'}`;
+  $('nextBtn').hidden = !next;
+  if (next) { $('nextBtn').textContent = `다음: ${next.name} →`; $('nextBtn').onclick = () => goStage(next.id); }
+  $('stagePick').innerHTML = ORDER.map((st) => `<button type="button" class="chip${st === ST ? ' on' : ''}" data-stage="${st.id}">${String(st.num).padStart(2, '0')} ${st.name}</button>`).join('');
+  $('stagePick').onclick = (e) => { const id = e.target.closest('[data-stage]')?.dataset.stage; if (id && id !== ST.id) goStage(id); };
+  document.title = `Roadster Racer · ${ST.name}`;
+}
 
 $('startBtn').addEventListener('click', startRace);
 $('againBtn').addEventListener('click', startRace);
@@ -1107,8 +1159,10 @@ const carReady = Promise.race([
 async function boot() {
   buildWorld();
   await carReady; await trafficReady;
-  if (trafficProtos.waymo) boss = createBoss({ scene, P, LANES, world, frame, carGround, puff, toast, radio, floatText, blip, gainXP, $, camera, car,
-    addDoge: (n) => { save.doge += n; stats.dogeGain += n; writeSaveSoon(); } }, 'waymo', trafficProtos.waymo);
+  try {
+    boss = createBoss({ scene, P, LANES, ROAD_HALF, world, frame, carGround, puff, toast, radio, floatText, blip, gainXP, $, camera, car, addTraffic, crash, traffic: () => traffic,
+      addDoge: (n) => { save.doge += n; stats.dogeGain += n; writeSaveSoon(); } }, ST.boss, trafficProtos);
+  } catch (e) { console.warn('boss skipped', e); boss = null; }
   $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · Textures & HDRI: Poly Haven, ambientCG (CC0)';
   resetRace(); placeCar(); syncTraffic(0); syncPickups(0);
   state = 'poster';
@@ -1116,7 +1170,8 @@ async function boot() {
   $('loadTxt').hidden = true;
   refreshSaveLine();
 }
+stageUI();
 document.fonts?.ready.then(() => setTimeout(boot, 30)) ?? setTimeout(boot, 30);
 requestAnimationFrame(loop);
 window.__game = { get boss() { return boss; }, get pickups() { return pickups; }, get traffic() { return traffic; }, P, get state() { return state; }, input, scene, camera, car, THREE, realcars: { loadCar, instance, CARS }, models: { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100 },
-  freeze(on) { this.frozen = on; } };
+  freeze(on) { this.frozen = on; }, skipCount() { countdown = 0.01; }, snap() { snapCam = true; }, pcam: PCAM, get stage() { return ST; }, renderer, step: (dt) => step(dt) };
