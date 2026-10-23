@@ -495,6 +495,7 @@ function resetRace() {
   for (const t of traffic) if (t.mesh) scene.remove(t.mesh);
   for (const f of jamFleets) scene.remove(f);
   for (const p of pickups) scene.remove(p.mesh);
+  PUDDLES.length = 0; PUDDLES.push(...(ST.puddles || []));
   spawnTraffic(); spawnPickups();
 }
 // who's on the road: real car models where they loaded, procedural stand-ins otherwise
@@ -744,7 +745,8 @@ const fmtTime = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60
 // ---------- simulation ----------
 const RADIO_SCRIPT = ST.radio;
 const AVOID = [...RAMPS, ...(ST.blocks || [])]; // where traffic changes lane
-const PUDDLES = ST.puddles || [];
+const PUDDLES = [...(ST.puddles || [])]; // bosses can add more (sunscreen)
+const PADS = ST.pads || [];             // like-button jump pads
 // slope of whatever the car stands on (ramp or raised surface), on top of the road's own grade
 function slopeAt(s, d, y) {
   const r = rampAt(s, d) || rampAt(s, d - 0.8) || rampAt(s, d + 0.8);
@@ -813,9 +815,15 @@ function step(dt) {
     }
     if (P.slipT <= 0) for (const q of PUDDLES) if (Math.abs(P.s - q.s) < q.l && Math.abs(P.d - q.d) < q.w) {
       P.slipT = 0.9; P.slipV = (Math.random() < 0.5 ? -1 : 1) * (5 + Math.random() * 3); P.v *= 0.9;
-      toast('냉각수!', '데이터센터 냉각수에 미끄러짐', '#5ff0ff'); blip(500, 200, 0.3, 'sine', 0.12);
+      const [big, small, col] = q.text || ['냉각수!', '데이터센터 냉각수에 미끄러짐', '#5ff0ff'];
+      toast(big, small, col); blip(500, 200, 0.3, 'sine', 0.12);
       for (let i = 0; i < 10; i++) puff(world(P.s, P.d, 0.3), new THREE.Vector3((Math.random() - 0.5) * 8, 2 + Math.random() * 3, (Math.random() - 0.5) * 8), '#c8fbff', 1.1, 0.7);
       break;
+    }
+    for (const q of PADS) if (P.grounded && Math.abs(P.s - q.s) < q.l && Math.abs(P.d - q.d) < q.w) {
+      P.grounded = false; P.air = 0; P.vy = (P.kG || 0) * P.v + q.v; P.rollDir = -P.rollDir; P.rollTo = P.roll + Math.PI * 2 * P.rollDir;
+      floatText('좋아요 점프!'); blip(300, 1200, 0.3, 'triangle', 0.16);
+      for (let i = 0; i < 12; i++) puff(world(P.s, P.d, 0.3), new THREE.Vector3((Math.random() - 0.5) * 10, 4 + Math.random() * 4, (Math.random() - 0.5) * 10), '#7ab8ff', 1, 0.6);
     }
     P.fuel = Math.min(AIR_FUEL, P.fuel + dt * 1.5);
   }
@@ -1065,7 +1073,7 @@ function posterStage(time) {
   car.userData.jet.opacity = 0.45 + Math.sin(time * 25) * 0.08;
   const blob = car.getObjectByName('blob'); if (blob) blob.visible = false;
   magnetRing.visible = false;
-  boss?.posterPose(POSTER.s + POSTER.boss[0], POSTER.boss[1], POSTER.boss[2], time);
+  boss?.posterPose(POSTER.s + POSTER.boss[0], POSTER.boss[1], POSTER.boss[2], time, POSTER.boss[3] || 0);
 }
 function updateCamera(dt, time) {
   const fr = frame(P.s);
@@ -1208,6 +1216,7 @@ async function boot() {
   await carReady; await trafficReady;
   try {
     boss = createBoss({ scene, P, LANES, ROAD_HALF, world, frame, carGround, puff, toast, radio, floatText, blip, gainXP, $, camera, car, addTraffic, crash, traffic: () => traffic,
+      addPuddle: (q) => PUDDLES.push(q), removePuddle: (q) => { const i = PUDDLES.indexOf(q); if (i >= 0) PUDDLES.splice(i, 1); },
       addDoge: (n) => { n = Math.max(n, -save.doge); save.doge += n; stats.dogeGain += n; writeSaveSoon(); } }, ST.boss, trafficProtos);
   } catch (e) { console.warn('boss skipped', e); boss = null; }
   $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · Textures & HDRI: Poly Haven, ambientCG (CC0)';

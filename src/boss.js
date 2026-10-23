@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { instance, addSensorKit } from './realcars.js';
 import { wheel, makeRTX5090 } from './models.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 const LANE_W = 6;
 
@@ -139,6 +140,62 @@ export function buildOrb() {
   return g;
 }
 
+// ---------- Lizard Zuck's Mega Headset (stage 4) ----------
+// a VR headset the size of a bus. Its front display shows a friendly avatar face; at half health the
+// face glitches off and the reptile underneath looks out. The display is the weak point.
+function faceTex(reptile) {
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 512; const x = c.getContext('2d');
+  if (!reptile) {
+    const g = x.createLinearGradient(0, 0, 0, 512); g.addColorStop(0, '#1b2a6b'); g.addColorStop(1, '#3b1a6b'); x.fillStyle = g; x.fillRect(0, 0, 1024, 512);
+    x.fillStyle = '#f1c9a5'; x.beginPath(); x.ellipse(512, 270, 230, 250, 0, 0, Math.PI * 2); x.fill();          // face
+    x.fillStyle = '#6b4a2e'; x.beginPath(); x.ellipse(512, 120, 250, 110, 0, Math.PI, 0); x.fill(); x.fillRect(262, 110, 500, 40); // caesar cut
+    for (const ex of [420, 604]) { x.fillStyle = '#fff'; x.beginPath(); x.ellipse(ex, 250, 52, 40, 0, 0, Math.PI * 2); x.fill(); x.fillStyle = '#3b6fb0'; x.beginPath(); x.arc(ex, 254, 26, 0, Math.PI * 2); x.fill(); x.fillStyle = '#000'; x.beginPath(); x.arc(ex, 254, 12, 0, Math.PI * 2); x.fill(); }
+    x.strokeStyle = '#8a3a2e'; x.lineWidth = 12; x.beginPath(); x.arc(512, 340, 90, 0.15 * Math.PI, 0.85 * Math.PI); x.stroke();       // the smile
+  } else {
+    x.fillStyle = '#1f3a1a'; x.fillRect(0, 0, 1024, 512);
+    for (let y = 0; y < 512; y += 26) for (let xx = (y / 26) % 2 ? 13 : 0; xx < 1024; xx += 26) {           // scales
+      const g = x.createRadialGradient(xx, y, 2, xx, y, 16); g.addColorStop(0, '#6fa04a'); g.addColorStop(1, '#22401c'); x.fillStyle = g; x.beginPath(); x.arc(xx, y, 15, 0, Math.PI * 2); x.fill();
+    }
+    for (const ex of [380, 644]) {
+      const g = x.createRadialGradient(ex, 250, 10, ex, 250, 95); g.addColorStop(0, '#fff6a0'); g.addColorStop(0.6, '#e8b81a'); g.addColorStop(1, '#6a4a00'); x.fillStyle = g;
+      x.beginPath(); x.ellipse(ex, 250, 105, 80, 0, 0, Math.PI * 2); x.fill();
+      x.fillStyle = '#000'; x.beginPath(); x.ellipse(ex, 250, 13, 72, 0, 0, Math.PI * 2); x.fill();             // slit pupils
+    }
+  }
+  x.globalAlpha = 0.12; x.fillStyle = '#000'; for (let y = 0; y < 512; y += 4) x.fillRect(0, y, 1024, 1);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+export function buildHeadset() {
+  const g = new THREE.Group();
+  const W = 9, H = 4.8, D = 4;
+  const shell = new THREE.MeshPhysicalMaterial({ color: '#eceef0', roughness: 0.32, clearcoat: 0.7, clearcoatRoughness: 0.2 });
+  const black = new THREE.MeshPhysicalMaterial({ color: '#0a0b0e', roughness: 0.12, clearcoat: 1, envMapIntensity: 1.4 });
+  const fabric = new THREE.MeshStandardMaterial({ color: '#3a3d44', roughness: 0.95 });
+  const body = new THREE.Mesh(new RoundedBoxGeometry(W, H, D, 6, 1.3), shell); body.castShadow = true; g.add(body);
+  const visor = new THREE.Mesh(new RoundedBoxGeometry(W - 0.6, H - 0.6, 0.6, 4, 0.25), black); visor.position.z = D / 2 + 0.05; g.add(visor);
+  const happy = faceTex(false), lizard = faceTex(true);
+  const eyeMat = new THREE.MeshBasicMaterial({ map: happy, toneMapped: false });
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(W - 1.6, H - 1.4), eyeMat); screen.position.z = D / 2 + 0.37; g.add(screen);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), new THREE.MeshBasicMaterial({ visible: false })); eye.position.z = D / 2 + 0.4; eye.name = 'eye'; g.add(eye);
+  // tracking cameras on the corners
+  for (const [x, y] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { const cam = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.12, 20), black); cam.rotation.x = Math.PI / 2; cam.position.set(x * (W / 2 - 0.9), y * (H / 2 - 0.7), D / 2 + 0.36); g.add(cam); }
+  // head strap loop behind, and the lettering
+  const strap = new THREE.Mesh(new THREE.TorusGeometry(3.6, 0.45, 10, 40), fabric); strap.rotation.x = Math.PI / 2; strap.scale.set(1.1, 1.5, 1); strap.position.z = -3.6; g.add(strap);
+  const top = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.35, 8, 30, Math.PI), fabric); top.rotation.y = Math.PI / 2; top.position.set(0, H / 2 - 0.4, -2.2); g.add(top);
+  const c = document.createElement('canvas'); c.width = 512; c.height = 96; const x = c.getContext('2d'); x.font = '900 72px "Chakra Petch", sans-serif'; x.textAlign = 'center'; x.fillStyle = '#9aa0aa'; x.fillText('MEGA QUEST', 256, 72);
+  const lt = new THREE.CanvasTexture(c); lt.colorSpace = THREE.SRGBColorSpace;
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 0.68), new THREE.MeshStandardMaterial({ map: lt, transparent: true })); label.position.set(0, H / 2 - 0.12, D / 2 - 0.4); label.rotation.x = -Math.PI / 2 + 0.6; g.add(label);
+  // the tongue, hidden until it lashes
+  const tongue = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.55, 1, 12), new THREE.MeshPhysicalMaterial({ color: '#d0445e', roughness: 0.3, clearcoat: 1 }));
+  tongue.geometry.translate(0, 0.5, 0); tongue.visible = false; g.add(tongue);
+  // hover glow
+  const haloMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 1.2, 3.2), toneMapped: false, transparent: true, opacity: 0.8 });
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(2.8, 0.12, 8, 48), haloMat); halo.rotation.x = Math.PI / 2; halo.position.y = -H / 2 - 0.8; g.add(halo);
+  const size = new THREE.Vector3(W, H, D);
+  g.userData = { size, pivots: [], jets: [halo], eyeMat, eye, eyeCol: new THREE.Color(0.32, 0.32, 0.32), happy, lizard, tongue, screen };
+  return g;
+}
+
 export const BOSSES = {
   waymo: {
     name: '웨이모 마더십', sub: '라이다 47개 탑재', hp: 100, appearAt: 430, giveUpAt: 2420, hover: 4.6,
@@ -166,6 +223,18 @@ export const BOSSES = {
       flee: '안개 속으로 도망갔어… 다음엔 꼭 잡자.',
     },
   },
+  headset: {
+    name: '리자드 저크의 메가 헤드셋', sub: '메가 퀘스트 프로 · 다리는 다음 업데이트에', hp: 110, appearAt: 760, giveUpAt: 3100, hover: 6.5, lizard: true,
+    xp: 420, doge: 220, need: ['avatar'],
+    lines: {
+      intro: '저기 거대 VR 헤드셋! 리자드 저크가 안에 있어. 하얀 선크림 뿌린 차선은 미끄러워!',
+      coil: '코일 충전 완료! F(⚡)로 디스플레이를 쏴.',
+      jump: '좋아요 패드로 날아올라서 헤드셋을 들이받아!',
+      half: '화면이 벗겨진다… 렙틸리언 정체 발각! 혀 날름 공격 조심해!',
+      win: '헤드셋 박살! 저크는 햇볕 쬐러 나갔대. 선크림 바르고.',
+      flee: '로그아웃해버렸어… 다음엔 꼭 잡자.',
+    },
+  },
   trailer: {
     name: '클론 트레일러', sub: 'BYD 왕회장 전용 · 돌핀 무한 복제', hp: 110, appearAt: 1880, giveUpAt: 3080, ground: true,
     xp: 320, doge: 160, need: ['bus', 'dolphin'],
@@ -184,8 +253,8 @@ export function createBoss(ctx, key, protos) {
   const def = BOSSES[key];
   if (!def) return null;
   for (const k of def.need || ['waymo']) if (!protos[k]) throw new Error('boss needs model ' + k);
-  const orb = !!def.orb;
-  const mesh = def.ground ? buildCloneTrailer(protos) : orb ? buildOrb() : buildWaymoMothership(protos.waymo);
+  const orb = !!def.orb, lizard = !!def.lizard;
+  const mesh = def.ground ? buildCloneTrailer(protos) : orb ? buildOrb() : lizard ? buildHeadset() : buildWaymoMothership(protos.waymo);
   mesh.visible = false; ctx.scene.add(mesh);
   const size = mesh.userData.size;
   const ground = !!def.ground;
@@ -262,6 +331,8 @@ export function createBoss(ctx, key, protos) {
     for (let i = 0; i < 7; i++) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.04, 0.02), ledMat); l.position.set(0, 0.3 + i * 0.26, 0.51); g.add(l); }
     return g;
   }
+  const sunTex = (() => { const c = document.createElement('canvas'); c.width = 128; c.height = 256; const x = c.getContext('2d'); const g = x.createRadialGradient(64, 128, 10, 64, 128, 64); g.addColorStop(0, 'rgba(255,255,255,0.95)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.scale(1, 2); x.beginPath(); x.arc(64, 64, 62, 0, Math.PI * 2); x.fill(); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+  const sunMat = new THREE.MeshStandardMaterial({ map: sunTex, transparent: true, depthWrite: false, roughness: 0.1, color: '#fffaf0', emissive: '#fff4e0', emissiveIntensity: 0.25 });
   const makeDrop = ground ? makeTag : orb ? makeRack : makeCone;
 
   // lightning bolt for the coil shot
@@ -303,7 +374,10 @@ export function createBoss(ctx, key, protos) {
           mesh.userData.holoMap ??= mesh.userData.holoMat.map; mesh.userData.holoMat.map = mesh.userData.firedTex; mesh.userData.holoMat.needsUpdate = true;
           ctx.toast('이사회: 해임!', '5초 동안 무방비 · 데미지 1.5배', '#ff4a6a'); ctx.radio(def.lines.fired);
         }
-      } else { B.phase = 2; ctx.radio(def.lines.half); }
+      } else {
+        B.phase = 2; ctx.radio(def.lines.half);
+        if (lizard) { mesh.userData.eyeMat.map = mesh.userData.lizard; mesh.userData.eyeMat.needsUpdate = true; ctx.toast('렙틸리언 정체 발각!', '혀 날름 공격 주의', '#7dff5a'); B.glitchT = 1.2; }
+      }
     }
     if (B.hp <= 0) {
       B.defeated = true; B.fallV = 0;
@@ -333,6 +407,23 @@ export function createBoss(ctx, key, protos) {
   function startAttack() {
     const P = ctx.P;
     const nearLane = ctx.LANES.reduce((a, l, i) => (Math.abs(l - P.d) < Math.abs(ctx.LANES[a] - P.d) ? i : a), 0);
+    if (lizard && (B.phase === 1 || Math.random() < 0.4)) {
+      const lanes = new Set([nearLane, (Math.random() * NL) | 0]);
+      if (Math.random() < 0.5) {
+        // SPF 100 sprayed across lanes: slippery for a while
+        for (const i of lanes) {
+          const q = { s: B.s - 26, d: ctx.LANES[i], l: 5, w: 2.4, text: ['선크림!', 'SPF 100에 미끄러짐', '#ffffff'] };
+          const m = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 10), sunMat); m.rotation.x = -Math.PI / 2; ctx.scene.add(m);
+          B.cones.push({ kind: 'puddle', s: q.s, d: q.d, y: 0.04, vs: 0, m, q, hit: false, landed: true }); ctx.addPuddle(q);
+        }
+        ctx.floatText('선크림 분사!'); ctx.blip(900, 500, 0.4, 'sine', 0.1);
+      } else {
+        for (const i of lanes) ctx.addTraffic('avatar', B.s - 4, ctx.LANES[i], { v: Math.max(10, P.v * 0.35), temp: true, name: '다리 없는 아바타' });
+        ctx.floatText('아바타 소환!'); ctx.blip(500, 1000, 0.3, 'triangle', 0.1);
+      }
+      B.atkT = B.phase === 2 ? 2.4 : 3.0;
+      return;
+    }
     if (orb && B.phase === 1 && Math.random() < 0.35) {
       // a hype wall across the road: harmless, but it hides the invoices behind it
       const m = makeHoloWall(); ctx.scene.add(m);
@@ -464,7 +555,7 @@ export function createBoss(ctx, key, protos) {
       const ds = B.s - P.s;
       if (!B.beam.hit && inLane && ds > 0 && ds < STRIPE_LEN + 4 && P.y - ground < 1.3) {
         B.beam.hit = true; P.v *= 0.55; P.crashT = 0.6; P.shake = 0.6;
-        ctx.toast('장애물 감지!', '라이다에 걸려 급정거', '#ff3d6e');
+        if (lizard) ctx.toast('혀 날름!', '렙틸리언 혀에 붙잡힘', '#7dff5a'); else ctx.toast('장애물 감지!', '라이다에 걸려 급정거', '#ff3d6e');
         ctx.blip(200, 60, 0.4, 'square', 0.2);
       }
       if (B.beam.t <= 0) B.beam = null;
@@ -478,6 +569,7 @@ export function createBoss(ctx, key, protos) {
       if (c.kind) {
         c.s += c.vs * dt;
         const near = Math.abs(c.s - P.s) < 1.8;
+        if (c.kind === 'puddle') continue;
         if (c.kind === 'wall') { if (!c.hit && P.s > c.s) { c.hit = true; ctx.gainXP(5); ctx.floatText('과대광고 통과 +5 EXP'); } continue; }
         if (!c.hit && near && Math.abs(c.d - P.d) < 1.9 && P.y - ctx.carGround(P.s, P.d) < 1.8) {
           c.hit = true; P.v *= 0.7; P.crashT = 0.4; P.shake = 0.45; ctx.addDoge(-10);
@@ -493,7 +585,7 @@ export function createBoss(ctx, key, protos) {
       }
       if (c.hit && c.flyV) { c.flyV.y -= 30 * dt; c.y += c.flyV.y * dt; c.d += c.flyV.x * dt; c.s += (P.v + 6) * dt; }
     }
-    B.cones = B.cones.filter((c) => { const keep = c.s > P.s - 30 && c.y > -5; if (!keep) ctx.scene.remove(c.m); return keep; });
+    B.cones = B.cones.filter((c) => { const keep = c.s > P.s - 30 && c.y > -5; if (!keep) { ctx.scene.remove(c.m); if (c.q) ctx.removePuddle(c.q); } return keep; });
 
     // jump attack: airborne car hits the belly from below
     B.jumpCd -= dt;
@@ -556,7 +648,7 @@ export function createBoss(ctx, key, protos) {
       st.material.opacity = B.beam ? 0.22 : 0.06 + 0.05 * Math.sin(time * 24);
     });
     beams.forEach((bm, i) => {
-      const on = B.beam && B.beam.lanes.includes(i);
+      const on = B.beam && B.beam.lanes.includes(i) && !lizard;
       bm.visible = !!on; if (!on) return;
       // a sheet of light from the boss down to the far end of the stripe
       const sEnd = B.s - 10;
@@ -569,8 +661,15 @@ export function createBoss(ctx, key, protos) {
       bm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
       bm.scale.x = 1.4; bm.material.opacity = 0.5 * B.beam.t / 0.5;
     });
+    if (lizard) {
+      const tg = mesh.userData.tongue; tg.visible = !!B.beam;
+      if (B.beam) { const k = 1 - B.beam.t / 0.5; tg.scale.set(1, 6 + 22 * Math.sin(Math.min(1, k * 1.6) * Math.PI), 1); tg.rotation.set(Math.PI / 2 + 0.35, 0, 0); tg.position.set(0, -1.4, 2.2); }
+      if (B.glitchT > 0) { B.glitchT -= 1 / 60; mesh.userData.screen.position.x = (Math.random() - 0.5) * 0.6; mesh.userData.screen.scale.y = 0.6 + Math.random() * 0.6; } else { mesh.userData.screen.position.x = 0; mesh.userData.screen.scale.y = 1; }
+    }
     for (const c of B.cones) {
-      c.m.visible = true; ctx.world(c.s, c.d, c.y + (c.kind === 'invoice' ? Math.sin(time * 6 + c.spin) * 0.25 : 0), c.m.position); c.m.rotation.y = ctx.frame(c.s).yaw;
+      c.m.visible = true; ctx.world(c.s, c.d, c.y + (c.kind === 'invoice' ? Math.sin(time * 6 + c.spin) * 0.25 : 0), c.m.position);
+      if (c.kind === 'puddle') { c.m.rotation.set(-Math.PI / 2, 0, ctx.frame(c.s).yaw); continue; }
+      c.m.rotation.y = ctx.frame(c.s).yaw;
       if (c.kind === 'invoice') { c.m.rotation.z = Math.sin(time * 4 + c.spin) * 0.35; c.m.rotation.x = -0.2 + Math.sin(time * 5 + c.spin) * 0.15; }
       if (c.kind === 'wall') c.m.children[0].material.opacity = 0.55 + Math.sin(time * 40) * 0.12 + (Math.random() < 0.04 ? -0.4 : 0);
       if (c.flyV) c.m.rotation.x += 0.2;
@@ -592,21 +691,23 @@ export function createBoss(ctx, key, protos) {
   }
 
   function reset() {
-    for (const c of B.cones) ctx.scene.remove(c.m);
+    for (const c of B.cones) { ctx.scene.remove(c.m); if (c.q) ctx.removePuddle(c.q); }
     Object.assign(B, { hp: def.hp, active: false, done: false, defeated: false, fleeing: false, telegraph: null, beam: null, phase: 1, atkT: 4, cones: [], coilHint: false, jumpHintAt: null, fired: null, wasFired: false });
     if (mesh.userData.holoMap) { mesh.userData.holoMat.map = mesh.userData.holoMap; mesh.userData.holoMat.needsUpdate = true; }
+    if (mesh.userData.happy) { mesh.userData.eyeMat.map = mesh.userData.happy; mesh.userData.eyeMat.needsUpdate = true; }
     mesh.visible = false; mesh.rotation.set(0, 0, 0);
     end(); B.done = false;
   }
 
   // movie-poster pose for the loading screen: looming over the street, eye blazing
-  function posterPose(sPos, d, y, time) {
+  function posterPose(sPos, d, y, time, yawOff = 0) {
     mesh.visible = true;
     if (ground) { ctx.world(sPos, d, y, mesh.position); mesh.rotation.set(0, ctx.frame(sPos).yaw + 0.12, 0); mesh.userData.eyeMat.color.setRGB(6 + Math.sin(time * 4) * 2, 0.25, 0.2); return; }
     ctx.world(sPos, d, y + Math.sin(time * 1.1) * 0.3, mesh.position);
     mesh.rotation.set(0.08, ctx.frame(sPos).yaw + 0.35, 0.05);
     for (const p of mesh.userData.pivots) p.rotation.y = time * 6;
-    if (mesh.userData.eyeCol) { mesh.userData.eyeMat.color.copy(mesh.userData.eyeCol).multiplyScalar(6 + Math.sin(time * 4) * 2); mesh.rotation.set(0.12, ctx.frame(sPos).yaw + 0.2, 0); mesh.userData.ring.rotation.y = time * 0.5; mesh.userData.holo.lookAt(ctx.camera.position); }
+    if (mesh.userData.screen) { mesh.rotation.set(0.1, ctx.frame(sPos).yaw + 0.25 + yawOff, 0); mesh.userData.eyeMat.color.setScalar(1.0); mesh.userData.eyeMat.map = mesh.userData.happy; }
+    else if (mesh.userData.eyeCol) { mesh.userData.eyeMat.color.copy(mesh.userData.eyeCol).multiplyScalar(6 + Math.sin(time * 4) * 2); mesh.rotation.set(0.12, ctx.frame(sPos).yaw + 0.2, 0); mesh.userData.ring.rotation.y = time * 0.5; mesh.userData.holo.lookAt(ctx.camera.position); }
     else mesh.userData.eyeMat.color.setRGB(6 + Math.sin(time * 4) * 2, 0.2, 0.25);
   }
 
