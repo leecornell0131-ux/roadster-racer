@@ -12,6 +12,11 @@ const B_GAP0 = 3700, B_GAP1 = 3736, B_BR0 = 3645, B_BR1 = 3815, B_FIN = 4100;
 
 const curve = (a, b, ph = 0) => (s) => { const k = THREE.MathUtils.smoothstep(s, 120, 420); return k * (a * Math.sin(s / 420 + ph) + b * Math.sin(s / 170 + 1.3 + ph)); };
 // a ramp pattern for a stretch: alternating sides, a wide centre kicker now and then
+// the big corners of a real route that have room for a fork (no other corner within 330 m either side)
+function bigTurns(R, n = 2) {
+  const big = R.turns.filter((t) => Math.abs(t.a) > 1.2 && t.s > 420 && t.s < R.finish - 330);
+  return big.filter((t) => !R.turns.some((u) => u !== t && Math.abs(u.a) > 0.25 && Math.abs(u.s - t.s) < 330)).slice(0, n);
+}
 function rampRun(s0, s1, every = 230, seed = 1) {
   const out = []; let i = seed;
   for (let s = s0; s < s1; s += every + ((i * 37) % 60), i++) {
@@ -40,11 +45,14 @@ export default {
   id: 'austin', num: 1, name: '오스틴',
   roadHalf: ROAD_HALF, lanes: LANES, finish: B_FIN,
   // easter eggs: one per spot, saved once found; two of them live only on the long way round
+  city: 'austin',
   eggs: [
     { id: 'au_beer', ev: 'tutorial', s: 1120, d: 10, y: 1.4, name: '사이버 맥주캔', line: '직원 냉장고에서 나온 각진 맥주캔. 따는 데 망치가 필요해.' },
-    { id: 'au_weird', ev: 'deliver', s: 1230, d: 68, y: 1.4, name: 'Keep Austin Weird 벽화 조각', line: '우회로로 온 사람만 보는 오스틴이야. 길 잃는 것도 실력이지.' },
-    { id: 'au_bats', ev: 'stunt', s: 2250, d: 68, y: 1.6, name: '콩그레스 다리 박쥐', line: '150만 마리 중 한 마리가 따라왔어. 이름은 배트모빌로 하자.' },
+    { id: 'au_weird', ev: 'deliver', fork: 0, y: 1.4, name: 'Keep Austin Weird 벽화 조각', line: '우회로로 온 사람만 보는 오스틴이야. 길 잃는 것도 실력이지.' },
+    { id: 'au_comedy', ev: 'stunt', fork: 0, y: 1.6, name: '코미디 마더십 티켓', line: '조 로갓 쇼 티켓이네. 주제는 아마 화성 이주겠지.' },
+    { id: 'au_bats', ev: 'soco', place: 'South Congress Bat Colony', y: 1.6, name: '콩그레스 다리 박쥐', line: '150만 마리 중 한 마리가 따라왔어. 이름은 배트모빌로 하자.' },
     { id: 'au_lens', ev: 'race', s: 544, d: 8.5, y: 5.2, name: '웨이모 라이다 렌즈', line: '경쟁사 라이다 렌즈다. 카메라 여덟 개면 충분한데 말이야.' },
+    { id: 'au_horn', ev: 'ut', place: 'Stark Center for Physical Culture and Sports', y: 1.6, name: '롱혼 뿔 장식', line: '훅 뎀 혼스! 보닛에 달면 공기저항 300% 증가.' },
   ],
   zones: [[-200, 'sixth'], [1500, 'downtown'], [B_BR0, 'river'], [B_BR1, 'capitol']],
   bridge: { b0: B_BR0, b1: B_BR1, g0: B_GAP0, g1: B_GAP1 },
@@ -119,44 +127,63 @@ export default {
     },
     {
       id: 'deliver', name: '첫 손님 배송',
-      brief: '<b>배송</b> 로보택시 대신 손님 5명을 내려 줘요. 초록 정차 구역에서 <b>↓ 브레이크</b>로 거의 멈춰야 내려요. 웨이모는 라이다에 걸리면 급정거하니 거리 두기.',
-      finish: 4300, zones: [[-200, 'east'], [1350, 'sixth'], [3050, 'rainey']], bridge: null, gaps: [], trafficMaxS: 4500,
-      // east Austin blocks: a left onto 6th, a right at Congress, a left down to Rainey, gentle bends between
-      turns: [{ s: 420, a: 0.25, r: 300 }, { s: 1230, a: Math.PI / 2, r: 46 }, { s: 1900, a: -0.3, r: 220 }, { s: 2650, a: -Math.PI / 2, r: 42 }, { s: 3400, a: Math.PI / 2, r: 50 }, { s: 3700, a: 0.35, r: 160 }, { s: 4050, a: -0.5, r: 120 }],
-      // miss the turn onto 6th or down to Rainey and the outside lane swings you the long way round
-      forks: [{ at: 1230, name: '6번가' }, { at: 3400, name: '레이니 St' }],
+      brief: '<b>배송</b> 진짜 오스틴 시내 지도예요. 레이니 스트리트에서 주의회 의사당까지 손님 넷을 내려 줘요. 초록 정차 구역에서 <b>↓ 브레이크</b>로 거의 멈춰야 내려요.',
+      // a real route on OpenStreetMap streets; the stops are the real places it passes
+      route: { from: 'Rainey Street Historic District', via: ["Esther's Follies", 'Mexic-Arte Museum', 'Austin Central Library', 'Moody Theater'], to: 'Texas State Capitol' },
+      zones: [[-200, 'downtown']], bridge: null, gaps: [], trafficMaxS: 9000,
+      forks: (L, R) => bigTurns(R, 1).map((t) => ({ at: t.s, name: '정상 경로' })),
       boss: null, legend: null,
-      ramps: rampRun(400, 4100, 260, 3),
-      traffic: more(1.1),
+      ramps: (L) => rampRun(380, L - 200, 300, 3),
+      traffic: more(1.0),
       mission: { type: 'deliver', time: 140, allowMiss: 1, stops: [
-        { s: 700, d: -9, name: '도지 BBQ', thanks: '팁은 도지코인으로!', line: '첫 손님 내렸다. 브레이크, 생각보다 잘 듣지?' },
-        { s: 1500, d: 9, name: '라이브 뮤직 바', thanks: '최고의 드라이브였어요!' },
-        { s: 2250, d: -3, name: 'GPU 전당포', thanks: 'H100 팔러 왔대요', line: '저 손님 GPU 팔고 집 산대. 오스틴 물가 실화냐.' },
-        { s: 3050, d: 3, name: '퀘소 24H', thanks: '치즈가 식기 전에!' },
-        { s: 3850, d: -9, name: '레이니 스트리트', thanks: '별 다섯 개!', line: '마지막 손님까지 완벽. 웨이모는 아직 첫 손님 태우는 중이래.' },
+        { place: "Esther's Follies", name: '에스더스 폴리스', thanks: '코미디 쇼 늦지 않았어요!', line: '첫 손님 내렸다. 6번가 코미디 극장이야.' },
+        { place: 'Mexic-Arte Museum', name: '멕시카르테 미술관', thanks: '그라시아스!' },
+        { place: 'Austin Central Library', name: '오스틴 중앙도서관', thanks: '반납 기한 딱 맞췄어요', line: '도서관 옥상 정원 봤어? 거기서 GPU 식히면 딱인데.' },
+        { place: 'Moody Theater', name: '무디 시어터', thanks: 'ACL 녹화 시작 전이에요!' },
       ] },
-      radio: [[20, '오늘은 로보택시 알바야. 손님 다섯 명. 초록 구역에서 브레이크 밟아서 세워.'], [1300, '6번가 들어왔어. 웨이모 급정거 조심.']],
-      lines: { finish: '정산 완료. 우버보다 빠르고, 웨이모보다 덜 멈췄어.', failed: '손님들이 별점 테러 중이야… 다시 가자.' },
-      poster: { s: 700, d: -6, y: 0, cam: { back: 10, side: 3, y: 2.6, ahead: 8, lookSide: -3, lookY: 1.4, fov: 46 } },
+      radio: [[20, '오늘은 로보택시 알바야. 진짜 오스틴 길이야. 네비 보고 회전 놓치지 마.'], [900, '웨이모는 라이다에 걸리면 급정거해. 거리 두고.']],
+      lines: { finish: '주의회 의사당 도착. 우버보다 빠르고, 웨이모보다 덜 멈췄어.', failed: '손님들이 별점 테러 중이야… 다시 가자.' },
+      poster: { s: 300, d: -6, y: 0, cam: { back: 10, side: 3, y: 2.6, ahead: 8, lookSide: -3, lookY: 1.4, fov: 46 } },
+      finishText: 'FINISH · 텍사스 주의회 의사당',
       text: { clear: 'DELIVERY DONE', clearTitle: '배송 완료' },
     },
     {
       id: 'stunt', name: '6번가 스턴트 쇼',
-      brief: '<b>스턴트</b> 차 옆을 아슬아슬하게 추월하고, 점프 중 배럴롤, 퍼펙트 착지로 이으면 <b>콤보 배수</b>가 올라가요. 중앙 버스 행렬 위는 위험하지만 점수가 커요.',
-      finish: 4400, zones: [[-200, 'sixth'], [2300, 'downtown']], bridge: null, gaps: [], trafficMaxS: 4600,
-      // 6th Street, then a block-by-block zigzag through downtown
-      turns: [{ s: 1000, a: -0.4, r: 200 }, { s: 2250, a: Math.PI / 2, r: 40 }, { s: 2700, a: -Math.PI / 2, r: 40 }, { s: 3350, a: Math.PI / 2, r: 44 }, { s: 3800, a: -Math.PI / 2, r: 44 }],
-      forks: [{ at: 2250, name: '콩그레스 Ave' }],
+      brief: '<b>스턴트</b> 진짜 6번가를 동쪽 끝에서 시호름 발전소까지. 차 옆 아슬아슬 추월, 점프 중 배럴롤, 퍼펙트 착지를 이어 <b>콤보 배수</b>를 키워요. 버스 행렬 지붕 위가 점수 노다지.',
+      route: { from: 'Republic of Texas Museum', via: ['Driskill Hotel'], to: 'Seaholm Power Plant' },
+      zones: [[-200, 'sixth']], bridge: null, gaps: [], trafficMaxS: 9000,
+      forks: (L, R) => bigTurns(R, 1).map((t) => ({ at: t.s, name: '정상 경로' })),
       boss: null,
-      ramps: [...rampRun(300, 4200, 170, 0), { s0: 1660, len: 18, dL: -6, dR: 6, h: 3.4 }, { s0: 3060, len: 18, dL: -6, dR: 6, h: 3.4 }],
-      jams: [[1700, 1840], [3100, 3260]], jamMix: { bus: 3, waymo: 2, robotaxi: 2 },
+      ramps: (L) => { const j = [Math.round(L * 0.32) - 40, Math.round(L * 0.68) - 40];
+        return [...rampRun(260, L - 150, 170, 0).filter((r) => j.every((s) => Math.abs(r.s0 - s) > 110)), ...j.map((s0) => ({ s0, len: 18, dL: -ROAD_HALF, dR: ROAD_HALF, h: 3.4 }))]; }, // full width: every lane can hop the jam
+      jams: (L) => [[Math.round(L * 0.32), Math.round(L * 0.32) + 140], [Math.round(L * 0.68), Math.round(L * 0.68) + 150]], jamMix: { bus: 3, waymo: 2, robotaxi: 2 },
       traffic: more(1.5),
-      legend: { s: 2600, d: 0, y: 11 },
-      mission: { type: 'stunt', scores: [7000, 14000, 22000] },
-      radio: [[20, '오늘 6번가 스턴트 쇼야. 아슬아슬 추월, 배럴롤, 퍼펙트 착지. 끊지 말고 이어 붙여.'], [1550, '저 정체 구간 보이지? 지붕 위로 달리면 점수 폭발이야.'], [2250, '다운타운. 빌딩 사이 경사로가 더 많아.']],
-      lines: { finish: '관객들 난리 났어. 다음은 고속도로야.', failed: '박수가 좀 약했어. 콤보를 끊지 말고 이어 봐.' },
-      poster: { s: 1250, d: 2, y: 4.2, cam: { back: 9, side: -4, y: 1.6, ahead: 10, lookSide: -2, lookY: 4.6, fov: 46 } },
+      legend: null,
+      mission: { type: 'stunt', scores: [7000, 14000, 24000] },
+      radio: [[20, '오늘 6번가 스턴트 쇼야. 진짜 그 거리야. 아슬아슬 추월, 배럴롤, 퍼펙트 착지. 끊지 말고 이어 붙여.'], [500, '저 정체 구간 보이지? 지붕 위로 달리면 점수 폭발이야.']],
+      lines: { finish: '관객들 난리 났어. 다음은 콩그레스 다리야.', failed: '박수가 좀 약했어. 콤보를 끊지 말고 이어 봐.' },
+      poster: { s: 400, d: 2, y: 0, cam: { back: 9, side: -4, y: 1.6, ahead: 10, lookSide: -2, lookY: 2.6, fov: 46 } },
+      finishText: 'FINISH · 시호름 발전소',
       text: { clear: 'SHOW TIME', clearTitle: '스턴트 쇼 성공' },
+    },
+    {
+      id: 'soco', name: '콩그레스 다리 드래그',
+      brief: '<b>레이스</b> 주의회 의사당에서 콩그레스 애비뉴를 쭉 내려가 레이디버드 호수 다리를 건너 사우스 콩그레스의 \'I love you so much\' 벽화까지. 로보택시 셋과 직선 승부. 깜빡이 반대쪽으로 추월해요.',
+      route: { from: 'Texas State Capitol', via: ['Congress Avenue'], to: [-400, 2075] }, // on South Congress right by the mural (its own node is round the corner)
+      zones: [[-200, 'downtown']], bridge: null, gaps: [], trafficMaxS: 9000,
+      boss: null, legend: null,
+      ramps: (L) => rampRun(300, L - 150, 230, 1),
+      traffic: more(0.8),
+      mission: { type: 'rivals', time: 50, perfect: 2, rivals: [
+        { type: 'robotaxi', name: '로보택시 #1', label: 'ROBOTAXI 1', speed: 56, d: -3, s: 24 },
+        { type: 'robotaxi', name: '로보택시 #2', label: 'ROBOTAXI 2', speed: 58, d: 9, s: 30 },
+        { type: 'waymo', name: '웨이모 원', label: 'WAYMO', speed: 59, d: -9, s: 36, tagColor: '#ffc83d' },
+      ] },
+      radio: [[20, '콩그레스 애비뉴 직선이야. 끝에 다리 지나면 박쥐 150만 마리 사는 곳.'], [1150, '호수 위다! 부스트 아끼지 마.'], [1900, '저 벽화 앞에서 다들 사진 찍어. 우리 차가 배경이 될 차례야.']],
+      lines: { finish: '다리 위에서 다 제쳤어. 박쥐들도 박수 치는 중.', failed: '직선에서 졌다고? 퍼펙트 착지 부스트로 붙어.' },
+      poster: { s: 200, d: 3, y: 0, cam: { back: 11, side: -6, y: 2.4, ahead: 12, lookSide: 2, lookY: 1.6, fov: 44 } },
+      finishText: 'FINISH · I LOVE YOU SO MUCH',
+      text: { clear: 'CONGRESS WINNER', clearTitle: '드래그 레이스 우승' },
     },
     {
       id: 'race', name: 'I-35 로보택시 레이스',
@@ -176,6 +203,26 @@ export default {
       lines: { finish: '로보택시 셋 다 백미러 속이야. 이제 마더십 잡으러 가자.', failed: '로보택시한테 졌다고? 깜빡이 보고 반대쪽으로 빠져.' },
       poster: { s: 600, d: 3, y: 0, cam: { back: 11, side: -6, y: 2.4, ahead: 12, lookSide: 2, lookY: 1.6, fov: 44 } },
       text: { clear: 'I-35 WINNER', clearTitle: '레이스 우승' },
+    },
+    {
+      id: 'ut', name: '게임데이 UT 셔틀',
+      brief: '<b>배송</b> 롱혼스 경기 날. 시호름에서 출발해 주의회 의사당을 돌아 UT 캠퍼스까지 팬들을 실어 날라요. 도로는 진짜 오스틴 지도 그대로.',
+      route: { from: 'Seaholm Power Plant', via: ['Austin Central Library', 'Texas State Capitol', 'Stark Center for Physical Culture and Sports'], to: 'Bates Recital Hall' },
+      zones: [[-200, 'downtown']], bridge: null, gaps: [], trafficMaxS: 9000,
+      forks: (L, R) => bigTurns(R, 2).map((t) => ({ at: t.s, name: '정상 경로' })),
+      boss: null, legend: null,
+      ramps: (L) => rampRun(380, L - 200, 320, 2),
+      traffic: more(1.2),
+      mission: { type: 'deliver', time: 170, allowMiss: 1, stops: [
+        { place: 'Austin Central Library', name: '중앙도서관 앞 팬', thanks: '훅 뎀 혼스!' },
+        { place: 'Texas State Capitol', name: '의사당 앞 응원단', thanks: '응원가 시작!', line: '의사당 앞 응원단 태웠어. 다음은 캠퍼스.' },
+        { place: 'Stark Center for Physical Culture and Sports', name: '스타크 센터', thanks: '킥오프 전에 도착!' },
+      ] },
+      radio: [[20, '오늘 롱혼스 경기야. 팬들 태우고 캠퍼스까지. 네비 회전 안내 잘 봐.']],
+      lines: { finish: '킥오프 전에 도착. 오늘 MVP는 우리 차야.', failed: '팬들이 1쿼터 놓쳤대… 다시 가자.' },
+      poster: { s: 300, d: -6, y: 0, cam: { back: 10, side: 3, y: 2.6, ahead: 8, lookSide: -3, lookY: 1.4, fov: 46 } },
+      finishText: 'FINISH · UT 캠퍼스',
+      text: { clear: 'GAME DAY', clearTitle: '셔틀 완료' },
     },
     {
       id: 'boss', name: '웨이모 마더십',
@@ -200,7 +247,8 @@ function build(k) {
   const end = FIN + 420;
   const wet = (a, b) => !br || b < br.b0 || a > br.b1;
   // ground split by the river
-  for (const [a, b] of br ? [[-400, br.b0], [br.b1, end + 400]] : [[-400, end + 400]]) {
+  if (k.CITY) k.buildCity();
+  else for (const [a, b] of br ? [[-400, br.b0], [br.b1, end + 400]] : [[-400, end + 400]]) {
     for (const [l, r] of [[-500, -15.5], [15.5, 500]]) {
       const g = new THREE.Mesh(ribbon(a, b, l, r, 20, () => -0.05, 20), M.ground); g.receiveShadow = true; scene.add(g);
     }
@@ -213,7 +261,7 @@ function build(k) {
   }
   buildHighway(k, zone, end);
   if (br) buildBridge(k, br);
-  buildBuildings(k, zone, end, br);
+  if (!k.CITY) buildBuildings(k, zone, end, br);
   buildStreetlights(k, zone, end, br);
   buildLandmarks(k, zone, br);
   k.finishArch(T.finishText || 'FINISH');
@@ -337,6 +385,7 @@ function buildLandmarks(k, zone, br) {
   const T = k.ST;
   // Giga Texas: the start of the original run, the whole left side of the test-drive lot
   const lot = zone(0) === 'lot';
+  if (k.CITY) return; // real downtown streets: the OSM buildings stand in for everything here
   const giga = new THREE.Mesh(new THREE.BoxGeometry(lot ? 90 : 70, 26, lot ? 1300 : 200), new THREE.MeshStandardMaterial({ color: '#b9b6c4', roughness: 0.55, metalness: 0.2 }));
   world(lot ? 600 : 60, lot ? -68 : -58, 13, giga.position); giga.rotation.y = frame(60).yaw; giga.receiveShadow = true; scene.add(giga);
   for (const s of lot ? [150, 650, 1150] : [60]) {

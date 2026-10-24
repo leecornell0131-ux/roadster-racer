@@ -11,6 +11,7 @@ import { loadProps, prop, propCredits, failed as loadFailed } from './props.js';
 import { loadHeads, portraits, headCredits } from './heads.js';
 import { STAGES, ORDER } from './stages/index.js';
 import { createMission } from './missions.js';
+import { loadCity, planRoute, project, cityBuildings, cityPolys } from './osm.js';
 
 // ---------- quality ----------
 const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -36,6 +37,29 @@ const EV_I = (() => {
 const EV = EVENTS[EV_I];
 const ST = { ...BASE, ...EV, id: BASE.id, name: BASE.name, event: EV, evIndex: EV_I, evKey: `${BASE.id}:${EV.id}`,
   text: { ...BASE.text, ...EV.text }, lines: { ...BASE.lines, ...EV.lines }, env: { ...BASE.env, ...EV.env } };
+// real-city events: the track is a route on the city's OpenStreetMap road graph. Length, corners, stops
+// and eggs come from the real streets; fields given as functions of the route length are resolved here.
+const CITY = ST.route ? await loadCity(BASE.city) : null;
+const ROUTE = CITY ? planRoute(CITY, ST.route) : null;
+if (ROUTE) {
+  ST.finish = ROUTE.finish; ST.turns = ROUTE.turns; ST.cx = null;
+  for (const k of ['ramps', 'jams', 'zones', 'radio', 'forks', 'checkpoints', 'legend']) if (typeof ST[k] === 'function') ST[k] = ST[k](ROUTE.finish, ROUTE);
+  // a named place lands where the route passes it, in the lane on its side of the street
+  const at = (name, lane) => {
+    const l = CITY.landmarks.find((x) => (typeof x.name === 'string' ? x.name : CITY.names[x.name]) === name);
+    if (!l) return null;
+    const pr = project(ROUTE.track, l.x, l.z), side = Math.sign(pr.d) || 1;
+    // a stop right on a corner (or inside a fork's split) can't be braked into: slide it onto the nearest calm stretch
+    const calm = (s) => !ROUTE.turns.some((t) => Math.abs(t.a) > 0.6 && s > t.s - 220 && s < t.s + 180);
+    const s0 = Math.min(ROUTE.finish - 60, Math.max(120, pr.s));
+    const s = [0, -60, 60, -120, 120, -200, 200, -280, 280, -360, 360].map((o) => s0 + o).find((x) => x > 120 && x < ROUTE.finish - 60 && calm(x)) ?? s0;
+    return { s: Math.round(s), d: lane ?? side * (ST.lanes.at(-1)) };
+  };
+  if (ST.mission?.stops) ST.mission = { ...ST.mission, stops: ST.mission.stops.map((st) => ({ ...st, ...(st.place ? at(st.place, st.d) : {}) })).sort((a, b) => a.s - b.s) };
+  // no launch ramp in the run-up to a stop: you can't brake while airborne
+  if (ST.mission?.stops && Array.isArray(ST.ramps)) ST.ramps = ST.ramps.filter((r) => !ST.mission.stops.some((st) => r.s0 > st.s - 170 && r.s0 < st.s + 30));
+  ST.cityEggs = (BASE.eggs || []).filter((e) => e.ev === EV.id && e.place).map((e) => ({ ...e, ...at(e.place, e.d) }));
+}
 function goStage(id, i = 0) {
   try { localStorage.setItem(STAGE_KEY, id); localStorage.setItem(EVENT_KEY, JSON.stringify({ stage: id, i })); } catch {}
   const u = new URL(location.href); u.searchParams.delete('stage'); u.searchParams.delete('ev');
@@ -132,10 +156,11 @@ const _f = new THREE.Vector3(), _r = new THREE.Vector3();
 const TURNS = ST.turns || null;
 // curvature (1/m, + = left) at s
 function curvature(s) {
+  if (ROUTE) { const T = ROUTE.track, u = Math.min(T.n - 1, Math.max(0, Math.floor(s - T.s0))); return T.hs[u + 1] - T.hs[u]; }
   if (!TURNS) { const d1 = cx(s + 1) - cx(s - 1), d2 = cx(s + 1) - 2 * cx(s) + cx(s - 1); return -d2 / Math.pow(1 + (d1 / 2) ** 2, 1.5); }
   let k = 0; for (const t of TURNS) { const L = Math.abs(t.a) * t.r; if (Math.abs(s - t.s) < L / 2) k += t.a / L; } return k;
 }
-const TRACK = TURNS && (() => {
+const TRACK = ROUTE ? ROUTE.track : TURNS && (() => {
   const s0 = -600, n = Math.ceil((ST.finish + 1600 - s0)), xs = new Float64Array(n + 1), zs = new Float64Array(n + 1), hs = new Float64Array(n + 1);
   let x = 0, z = 0, h = 0; // start at the origin facing -z
   // integrate back from 0 to s0 first so s = 0 sits at the origin
@@ -516,6 +541,28 @@ function buildFork(fk) {
   signAt(fk.a + 10, sd * -4, `${t.a > 0 ? '↰' : '↱'} ${fk.name || word}`, '#0b5a2a');
   signAt(fk.a + 10, sd * (ROAD_HALF + FORK_W), `${t.a > 0 ? '↗' : '↖'} 우회로 · 합류`, '#5a4a0b');
 }
+// the real city around the route: a ground sheet, the lake and parks, and every building within a few
+// blocks at its real footprint and height (the ones that would stand on the track are left out)
+function buildCity() {
+  const ext = CITY.meta.extent, W = (ext.x[1] - ext.x[0]) * 1.6, D = (ext.z[1] - ext.z[0]) * 1.6;
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ map: photo('walk_diff.jpg', { rep: [W / 6, D / 6] }), color: '#6d6670', roughness: 0.95 }));
+  ground.rotation.x = -Math.PI / 2; ground.position.y = -0.08; ground.receiveShadow = true; scene.add(ground);
+  const water = new THREE.Mesh(cityPolys(CITY.water, -0.03), M.water); scene.add(water);
+  const green = new THREE.Mesh(cityPolys(CITY.green, -0.05), new THREE.MeshStandardMaterial({ map: photo('grass_diff.jpg', { rep: [1 / 8, 1 / 8] }), color: '#7f8f62', roughness: 1 }));
+  green.receiveShadow = true; scene.add(green);
+  // route samples every 8 m on a coarse grid: "near" = within 300 m of the road you drive
+  const C = 100, near = new Set();
+  for (let s = -200; s < FINISH_S + 300; s += 8) { const f = frame(s); for (let i = -3; i <= 3; i++) for (let j = -3; j <= 3; j++) near.add(`${Math.floor(f.x / C) + i},${Math.floor(f.z / C) + j}`); }
+  const blds = cityBuildings(CITY, (x, z) => near.has(`${Math.floor(x / C)},${Math.floor(z / C)}`), (x, z) => clearOfRoad(x, z, -1.2),
+    (h, b) => (h > 60 ? 0 : h > 28 ? 1 : (Math.abs(b[4][0] * 3.1) | 0) % 2 ? 2 : 3));
+  const m4 = new THREE.Matrix4(), col = new THREE.Color();
+  for (const { kind, geo } of blds) {
+    const inst = new THREE.InstancedMesh(geo, facadeMat(FACADES[kind]), 1);
+    inst.setMatrixAt(0, m4.identity()); inst.setColorAt(0, col.setHSL(FACADES[kind].hue, 0.1, 0.5));
+    inst.receiveShadow = true; inst.frustumCulled = false; scene.add(inst);
+  }
+  stats.cityBuildings = blds.length;
+}
 function finishArch(text) {
   const archMat = new THREE.MeshStandardMaterial({ color: '#1a1a22', metalness: 0.8, roughness: 0.3 });
   const half = ROAD_HALF + 1.5;
@@ -592,7 +639,7 @@ function placeBuildings(kinds) {
     scene.add(inst);
   });
 }
-const kit = { ST, clearOfRoad, forkZone, sideRuns, FORKS, curvature, THREE, scene, sky, prop, Q, IS_MOBILE, M, world, frame, elev, ribbon, wall, crossWall, grid, photo, canvasTex, textTex, addBillboard, FACADES, facadeMat, placeBuildings, finishArch };
+const kit = { ST, CITY, buildCity: () => buildCity(), clearOfRoad, forkZone, sideRuns, FORKS, curvature, THREE, scene, sky, prop, Q, IS_MOBILE, M, world, frame, elev, ribbon, wall, crossWall, grid, photo, canvasTex, textTex, addBillboard, FACADES, facadeMat, placeBuildings, finishArch };
 
 // ---------- vehicles ----------
 // ---------- pickups ----------
@@ -850,7 +897,13 @@ function spawnPickups() {
   if (ST.legend) addPickup('legend', ST.legend.s, ST.legend.d, ST.legend.y);   // only reachable with ramp + jump
   for (const [type, ps, pd, py] of ST.pickups || []) addPickup(type, ps, pd, py);
   // easter eggs for this event that haven't been found yet
-  for (const e of BASE.eggs || []) if (e.ev === EV.id && !save.eggs[e.id]) { addPickup('egg', e.s, e.d, e.y ?? 1.4); pickups[pickups.length - 1].egg = e; }
+  for (const e0 of [...(BASE.eggs || []).filter((e) => !e.place), ...(ST.cityEggs || [])]) {
+    if (e0.ev !== EV.id || save.eggs[e0.id]) continue;
+    const fk = e0.fork != null ? FORKS[e0.fork] : null; if (e0.fork != null && !fk) continue;
+    // an egg on a fork sits in the middle of the long way round
+    const e = fk ? { ...e0, s: fk.turn.s, d: fk.side * (ROAD_HALF + fk.off + FORK_W) } : e0;
+    addPickup('egg', e.s, e.d, e.y ?? 1.4); pickups[pickups.length - 1].egg = e;
+  }
   // coin arcs over gaps
   for (const g of GAPS) for (let i = 0; i < 9; i++) { const s = g.s0 - 4 + i * 5.2, x = (s - (g.s0 - 4)) / 42; addPickup('coin', s, 0, 3 + 7 * Math.sin(Math.PI * x)); }
 }
@@ -1255,6 +1308,9 @@ function stepRival(t, dt) {
   // racing speed with a soft rubber band so the race stays close both ways
   const ahead = t.s - P.s, band = ahead > 70 ? 0.9 : ahead < -70 ? 1.08 : 1;
   let target = t.finishT != null ? 18 : t.base * band;
+  // real corners: rivals brake for them like you do
+  let kMax = 0; for (let ds = 0; ds < 60; ds += 6) kMax = Math.max(kMax, Math.abs(curvature(t.s + ds)));
+  if (kMax > 0) target = Math.min(target, Math.sqrt(60 / kMax));
   let lead = null;
   for (const o of traffic) if (o !== t && o.s > t.s && o.s - t.s < 38 && Math.abs(o.d - t.dT) < 2.8 && (!lead || o.s < lead.s)) lead = o;
   if (lead && lead.v < target - 2 && t.pend == null) {
@@ -1539,13 +1595,18 @@ function step(dt) {
       else if (Math.random() < 0.3) floatText('웨이모: 장애물 감지!');
     }
     if (Math.abs(ds) < t.hl + 2.2 && dd < t.hw + 1) {
-      if (P.y - t.y < t.h - 0.55) { if (ds > -t.hl * 0.5) crash(t); }
+      if (P.y - t.y < t.h - 0.55) {
+        // running along a jam's roofs into a taller one (car roof → bus): hop up onto it instead of a dead stop
+        if (P.y > 0.8 && P.y - t.y > t.h - 2.4 && P.v > 8 && ds > 0) { P.vy = Math.max(P.vy, 7.5); P.grounded = false; P.y = Math.max(P.y, t.y + t.h - 0.5); }
+        else if (ds > -t.hl * 0.5) crash(t);
+      }
       else if (!t.over) {
         t.over = true;
-        if (P.grounded) { // driving across roofs
+        if (P.grounded && P.v < 10) { /* creeping on a roof edge: no score farming */ }
+        else if (P.grounded) { // driving across roofs
           stats.roofs++; P.roofRun++; gainXP(3); P.boostG = Math.min(100, P.boostG + 4); trick('지붕 질주', 40, true);
           if (P.roofRun % 5 === 0) floatText(`지붕 질주 ×${P.roofRun}`);
-        } else { stats.jumpsOver++; gainXP(15); P.boostG = Math.min(100, P.boostG + 15); blip(600, 900, 0.12); trick('차 뛰어넘기', 120); }
+        } else if (P.v > 10) { stats.jumpsOver++; gainXP(15); P.boostG = Math.min(100, P.boostG + 15); blip(600, 900, 0.12); trick('차 뛰어넘기', 120); }
       }
     }
   }
@@ -2033,7 +2094,7 @@ async function boot() {
       addPuddle: (q) => PUDDLES.push(q), removePuddle: (q) => { const i = PUDDLES.indexOf(q); if (i >= 0) PUDDLES.splice(i, 1); },
       addDoge: (n) => { n = Math.max(n, -save.doge); save.doge += n; stats.dogeGain += n; writeSaveSoon(); } }, ST.boss, trafficProtos, ST.bossOpts);
   } catch (e) { console.warn('boss skipped', e); boss = null; }
-  $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · ' + [...propCredits(ST.props || []), ...headCredits(HEAD_LIST)].map((c) => c + ' · ').join('') + 'Textures & HDRI: Poly Haven, ambientCG (CC0) · Earth & stars: NASA Blue Marble, Black Marble, SVS Deep Star Maps' + (loadFailed.length ? ' · ⚠ ' + loadFailed.join(' / ') : '');
+  $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · ' + [...propCredits(ST.props || []), ...headCredits(HEAD_LIST)].map((c) => c + ' · ').join('') + 'Textures & HDRI: Poly Haven, ambientCG (CC0) · Earth & stars: NASA Blue Marble, Black Marble, SVS Deep Star Maps' + (CITY ? ' · Map data © OpenStreetMap contributors (ODbL)' : '') + (loadFailed.length ? ' · ⚠ ' + loadFailed.join(' / ') : '');
   resetRace(); placeCar(); syncTraffic(0); syncPickups(0);
   state = 'poster';
   $('startBtn').disabled = false; $('startBtn').textContent = '출발';
@@ -2043,7 +2104,7 @@ async function boot() {
 stageUI();
 document.fonts?.ready.then(() => setTimeout(boot, 30)) ?? setTimeout(boot, 30);
 requestAnimationFrame(loop);
-window.__game = { get boss() { return boss; }, get pickups() { return pickups; }, get traffic() { return traffic; }, P, get state() { return state; }, input, scene, camera, car, THREE, realcars: { loadCar, instance, CARS }, models: { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100 },
+window.__game = { ST, get boss() { return boss; }, get pickups() { return pickups; }, get traffic() { return traffic; }, P, get state() { return state; }, input, scene, camera, car, THREE, realcars: { loadCar, instance, CARS }, models: { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100 },
   gunDbg: () => ({ heat: P.heat, over: P.overheat, me: world(P.s, P.d, P.y + 1).toArray(), targets: gunTargets().map((t) => t.pos.toArray()), live: gunShots.filter((x) => x.live).length }),
   freeze(on) { this.frozen = on; }, skipCount() { countdown = 0.01; }, snap() { snapCam = true; }, pcam: PCAM, get stage() { return ST; }, renderer, step: (dt) => step(dt),
   // for the autopilot that measures clean-run times: with manual set, only step() advances the race

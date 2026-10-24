@@ -17,7 +17,7 @@ for (const ev of evs) {
   await p.goto(`http://localhost:8123/index.html?stage=${st}&ev=${i}&unlock`);
   await p.waitForFunction(() => window.__game && __game.state === 'poster', null, { timeout: 120000 });
   await p.evaluate(() => { localStorage.clear(); });
-  await p.click('#startBtn'); await p.evaluate(() => { __game.skipCount(); __game.manual = true; });
+  await p.evaluate(() => { document.getElementById('startBtn').click(); __game.skipCount(); __game.manual = true; });
   await p.waitForFunction(() => __game.state === 'race', null, { timeout: 30000 });
   let res = null;
   for (let chunk = 0; chunk < 200 && !res; chunk++) {
@@ -40,7 +40,7 @@ for (const ev of evs) {
         const hud = g.mission?.hud?.().line || '';
         if (M.type === 'deliver') {
           const nx = M.stops.find((s) => s.s > P.s - 3 && !(B.done || []).includes(s.s));
-          if (nx && nx.s - P.s < 260) { td = nx.d; if (nx.s - P.s < P.v * P.v / 70 + 10) wantV = 3; if (Math.abs(nx.s - P.s) < 4 && P.v < 4) { B.dwell = (B.dwell || 0) + DT; if (B.dwell > 0.7) { (B.done ??= []).push(nx.s); B.dwell = 0; } } }
+          if (nx && nx.s - P.s < 260) { td = nx.d; if (nx.s - P.s < P.v * P.v / 45 + 14) { wantV = 3; I.boost = false; } if (Math.abs(nx.s - P.s) < 4 && P.v < 4) { B.dwell = (B.dwell || 0) + DT; if (B.dwell > 0.7) { (B.done ??= []).push(nx.s); B.dwell = 0; } } }
         }
         if (M.type === 'tutorial') {
           const k = +hud.split('/')[0];
