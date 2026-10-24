@@ -51,3 +51,7 @@ Source files: tools/pack-model.mjs from the Sketchfab downloads; sizing and faci
 | BARACK OBAMA | LOUIS | DC 747 drone rider (black scan backdrop removed) |
 
 Real likenesses appear under parody names; check store rules on real people before an App Store release.
+
+## Map data
+
+City maps (`assets/osm/*.json`, baked by `tools/osm-extract.mjs`) use data © OpenStreetMap contributors, available under the Open Database License (ODbL 1.0): https://www.openstreetmap.org/copyright. The in-game credits must show "© OpenStreetMap contributors" wherever a city map is used.
