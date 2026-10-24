@@ -2,25 +2,13 @@
 # 육아앱(babylog)과 같은 Codemagic 계정·API 키(babylog)·배포 인증서(babylog-dist)를 같이 씀.
 # Mac이 없어서 Xcode 프로젝트는 빌드할 때 ios-app/project.yml로 만듦(XcodeGen).
 # 게임 파일은 앱 안에 들어가므로, 새 맵을 아이폰에서 하려면 다시 빌드해야 함.
-# 무료 시간(월 500분)을 아끼려고 자동 빌드는 아이폰 앱 코드가 바뀔 때만. 게임만 바뀌면 손으로 "Start new build".
+# 무료 시간(월 500분)을 아끼려고 자동 빌드는 없음. 새 버전을 올릴 때 손으로 "Start new build".
+# (changeset 조건을 걸면 손으로 누른 빌드도 "바뀐 파일 없음"으로 건너뛰어서 뺐음)
 workflows:
   ios-testflight:
     name: 아이폰 TestFlight
     max_build_duration: 30
     instance_type: mac_mini_m2
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: main
-          include: true
-      cancel_previous_builds: true
-    when:
-      changeset:
-        includes:
-          - ios-app/
-          - codemagic.yaml
-          - tools/build-ios-web.mjs
     integrations:
       # Codemagic 팀 설정 > Integrations > Developer Portal에 육아앱 때 연결한 API 키 이름
       app_store_connect: babylog
