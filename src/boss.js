@@ -565,9 +565,50 @@ function parcelTex(label = '당일배송') {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
+// boss entrance dialogue: [speaker, line]; 'boss' is the boss itself, 'hero' is 일론, or { name, face, ava }
+const ALT = { name: '샘 올트-맨', ava: 'SA' }, ZUCK = { name: '리자드 저크', face: 'zuck', ava: 'MZ' }, AMO = { name: '다리오 아모-데이', ava: 'DA' };
+export const CUTS = {
+  waymo: [
+    ['boss', '삐빅. 전방에 미확인 테슬라 감지. 라이다 47개로 분석 결과… 운전자가 핸들을 안 잡고 있음.'],
+    ['hero', '너넨 아예 운전석이 없잖아.'],
+    ['boss', '정정: 운전석 대신 고깔콘 3만 개를 탑재했다. 전 차선 공사 개시.'],
+  ],
+  orb: [
+    [ALT, '안녕하세요. 저는 인류에게 안전하고 유익한 AGI를… 다음 달에 출시합니다.'],
+    ['hero', '작년에도 다음 달이라며.'],
+    [ALT, '그러니까 이번 달 구독료부터 내세요. 홍채 한 번만 스캔해 주시면 됩니다.'],
+  ],
+  headset: [
+    [ZUCK, '어서 와, 인간 친구. 나도 너처럼 물을 마시고, 햇볕을 쬐는, 평범한 포유류야. (혀 날름)'],
+    ['hero', '방금 혀가 두 갈래였는데?'],
+    [ZUCK, '렌더링 버그야. 메타버스로 들어와. 다리는 다음 업데이트에 달아줄게.'],
+  ],
+  icecream: [
+    ['boss', '이봐 친구, 농담 아니고, 내가 1972년에 이 트럭을 몰 때는 말이야…'],
+    ['hero', '할아버지, 지금 역주행 중이세요.'],
+    ['boss', '…어디까지 했지? 아 맞다, 전기차 규제 서류! 서류 폭탄 투하!'],
+  ],
+  bezos: [
+    ['boss', '늦었군, 일론. 달에 먼저 도착한 건 나야. 증거? 내일 도착 예정이야.'],
+    ['hero', '프라임 회원인데도 늦네?'],
+    ['boss', '이번엔 당일배송이다. 오늘 밤 11시 59분까지만 도착하면 되지.'],
+  ],
+  agi: [
+    [ALT, '우리 셋이 GPU 100만 장을 합쳤다. 화성은 이제 우리 데이터센터야!'],
+    [AMO, '잠깐, 접수하기 전에 안전성 평가 보고서 300쪽부터 읽고 가자.'],
+    [ZUCK, '그리고 화성 이름은 메타-화성으로 바꾸고. 다리는 다음 업데이트에.'],
+    ['hero', '…셋이 합체했는데 의견은 하나도 안 합쳐졌네.'],
+  ],
+  trailer: [
+    ['boss', '니하오! 이 트레일러에서 돌핀이 1초에 한 대씩 나와. 가격은 네 차의 절반!'],
+    ['hero', '품질은?'],
+    ['boss', '그것도 절반! 대신 무한 복제야. 복사, 붙여넣기 개시!'],
+  ],
+};
+
 export const BOSSES = {
   waymo: {
-    name: '웨이모 마더십', sub: '라이다 47개 탑재', hp: 100, appearAt: 430, giveUpAt: 2420, hover: 4.6,
+    cutName: '웨이모 마더십', ava: 'WM', name: '웨이모 마더십', sub: '라이다 47개 탑재', hp: 100, appearAt: 430, giveUpAt: 2420, hover: 4.6,
     xp: 250, doge: 120,
     lines: {
       intro: '저거 봐, 웨이모 마더십이야! 라이다로 도로 전체를 스캔해. 빨간 줄이 깔린 차선은 피해!',
@@ -605,7 +646,7 @@ export const BOSSES = {
     },
   },
   icecream: {
-    face: 'biden', name: '아이스크림 조의 트럭', sub: '+ 버락 오바바의 에어포스 원 드론', hp: 130, appearAt: 950, giveUpAt: 3020, ground: true, truck: true,
+    face: 'biden', cutName: '아이스크림 조', name: '아이스크림 조의 트럭', sub: '+ 버락 오바바의 에어포스 원 드론', hp: 130, appearAt: 950, giveUpAt: 3020, ground: true, truck: true,
     xp: 480, doge: 260, need: [],
     bump: '아이스크림 트럭에 부딪힘', stompText: '트럭 지붕을 밟았다', dropHit: '규제 서류 폭탄!',
     lines: {
@@ -619,7 +660,7 @@ export const BOSSES = {
     },
   },
   bezos: {
-    face: 'bezos', name: '제프 배송스의 레이트 셰퍼드', sub: '배송스 오리진 · 항상 한 발 늦게 도착', hp: 170, appearAt: 700, giveUpAt: 3150, hover: 3, gap: 56, landGap: 34, shepherd: true, landing: true,
+    face: 'bezos', cutName: '제프 배송스', name: '제프 배송스의 레이트 셰퍼드', sub: '배송스 오리진 · 항상 한 발 늦게 도착', hp: 170, appearAt: 700, giveUpAt: 3150, hover: 3, gap: 56, landGap: 34, shepherd: true, landing: true,
     xp: 600, doge: 320, need: [],
     dropHit: '당일배송 폭탄!', beamText: ['프라임 레이저!', '반품 불가 · 급감속', '#7ab8ff'],
     lines: {
@@ -647,7 +688,7 @@ export const BOSSES = {
     },
   },
   trailer: {
-    name: '클론 트레일러', sub: 'BYD 왕회장 전용 · 돌핀 무한 복제', hp: 110, appearAt: 1880, giveUpAt: 3080, ground: true,
+    cutName: '왕회장', ava: 'BYD', name: '클론 트레일러', sub: 'BYD 왕회장 전용 · 돌핀 무한 복제', hp: 110, appearAt: 1880, giveUpAt: 3080, ground: true,
     xp: 320, doge: 160, need: ['bus', 'dolphin'],
     lines: {
       intro: '왕회장 트레일러다! 뒤에서 돌핀 클론을 계속 뽑아내. 빨간 차선은 클론이 굴러 나오는 자리야!',
@@ -803,10 +844,122 @@ export function createBoss(ctx, key, protos, opts) {
     ctx.$('bossName').innerHTML = `${face ? `<img class="face" src="${face}" alt="">` : ''}${def.name}<small>${def.sub}</small>`;
     if (ground) { B.s = ctx.P.s + rearOff + 120; B.y = 0; B.d = ctx.LANES[(NL / 2) | 0]; }
     if (truck) { Object.assign(mesh.userData, home); mesh.userData.drone.visible = false; B.dozeT = 7; }
+    // the animated entrance plays first (unless the autopilot is measuring), then the fight starts
+    const lines = CUTS[key];
+    if (lines && !ctx.noCut?.()) beginCut(lines); else reveal();
+  }
+  function reveal() {
     ctx.$('bossBar').hidden = false; ctx.$('coilRow').hidden = false; ctx.$('fireBtn').hidden = false; document.querySelector('.speed').classList.add('boss');
     ctx.toast(def.name.toUpperCase(), '보스 출현!', '#ff2a3a'); ctx.radio(def.lines.intro);
     ctx.blip(120, 60, 0.8, 'sawtooth', 0.18);
     hud();
+  }
+
+  // ---------- entrance cutscene ----------
+  // the race is frozen while it runs; the boss makes its entrance, the camera cuts between it and the car,
+  // and the two trade a few lines. Any key or a tap skips it.
+  const ENTER = 2.6, LINE_T = 2.5;
+  let cut = null;
+  const cv = new THREE.Vector3(), cl = new THREE.Vector3(), bossW = new THREE.Vector3();
+  const style = overlord ? 'slam' : shepherd ? 'land' : orb ? 'unfold' : ground ? 'overtake' : 'swoop';
+  function beginCut(lines) {
+    const P = ctx.P;
+    cut = { t: 0, lines, dur: ENTER + lines.length * LINE_T + 0.4, s1: B.s, d1: B.d, y1: B.y, line: -1, boom: false,
+      side: ground ? (P.d > B.d ? -1 : 1) : 1, scale: mesh.scale.x };
+    const el = ctx.$('cine'); el.hidden = false; document.body.classList.add('cine');
+    const face = def.face && ctx.faces?.[def.face];
+    ctx.$('cineName').innerHTML = `${face ? `<img src="${face}" alt="">` : ''}<span>${def.name}</span><small>${def.sub}</small>`;
+    ctx.$('cineCard').classList.remove('show'); ctx.$('cineSub').classList.remove('show');
+    ctx.blip(55, 40, 2.2, 'sawtooth', 0.12);
+    placeCut(0);
+  }
+  function endCut() {
+    if (!cut) return;
+    B.s = cut.s1; B.d = cut.d1; B.y = cut.y1; mesh.scale.setScalar(cut.scale); cut = null;
+    ctx.$('cine').hidden = true; document.body.classList.remove('cine');
+    ctx.world(B.s, B.d, B.y, mesh.position);
+    reveal();
+  }
+  const ease = (x) => 1 - (1 - Math.min(1, Math.max(0, x))) ** 3;
+  // where the boss is at cutscene time t
+  function placeCut(t) {
+    const e = ease(t / ENTER), k = 1 - e;
+    B.s = cut.s1; B.d = cut.d1; B.y = cut.y1; mesh.scale.setScalar(cut.scale);
+    if (style === 'swoop') { B.s += k * 260; B.y += k * 70; B.d += k * 30; }
+    else if (style === 'land') { B.y += k * 95; B.s += k * 40; }
+    else if (style === 'unfold') { B.s += k * 140; B.y += k * 40; mesh.scale.setScalar(cut.scale * (0.15 + 0.85 * e)); }
+    else if (style === 'slam') { const f = Math.min(1, t / 1.5); B.y += (1 - f * f) * 120; }
+    else if (style === 'overtake') { const sv = ctx.P.s + rearOff + 36; B.s = ctx.P.s - 70 + (sv + 70 - ctx.P.s) * ease(t / (ENTER * 0.9)); // pulls up close for the talk, then the fight starts at its usual distance
+      B.d += cut.side * (1 - ease((t - 0.8) / ENTER)) * LANE_W; }
+  }
+  function cutRot(t, time) {
+    const k = 1 - ease(t / ENTER);
+    if (style === 'swoop') { mesh.rotation.z += k * 0.7 * Math.sin(time * 2); mesh.rotation.x += k * 0.35; }
+    if (style === 'unfold') mesh.rotation.y += k * 6;
+    if (style === 'land') mesh.rotation.z += Math.sin(time * 3) * 0.05 * k;
+  }
+  function say(i) {
+    const [who, txt] = cut.lines[i];
+    const sp = who === 'hero' ? { name: '일론', face: 'elon', ava: 'EM' } : who === 'boss' ? { name: def.cutName || def.name, face: def.face, ava: def.ava || 'BOSS' } : who;
+    const img = sp.face && ctx.faces?.[sp.face];
+    ctx.$('cineWho').textContent = sp.name;
+    const av = ctx.$('cineAva'); av.textContent = img ? '' : sp.ava || ''; av.style.backgroundImage = img ? `url(${img})` : '';
+    ctx.$('cineTxt').textContent = txt;
+    const sub = ctx.$('cineSub'); sub.classList.remove('show'); void sub.offsetWidth; sub.classList.add('show');
+    sub.classList.toggle('hero', who === 'hero');
+    ctx.blip(who === 'hero' ? 660 : 180, who === 'hero' ? 880 : 120, 0.12, 'square', 0.05);
+  }
+  // advance the cutscene and place the camera; false when there is none
+  function cine(dt, time, camera) {
+    if (!cut) return false;
+    const P = ctx.P;
+    cut.t += dt; const t = cut.t;
+    if (t >= cut.dur) { endCut(); return false; }
+    placeCut(t);
+    ctx.world(B.s, B.d, B.y, mesh.position); sync(time); cutRot(t, time);
+    mesh.updateMatrixWorld(true);
+    // the eye or face is what the close-ups frame
+    (mesh.userData.eye || mesh).getWorldPosition(bossW);
+    const big = Math.max(size.x, size.y, size.z);
+    // effects: dust when it lands, a shake on the slam
+    if (style === 'slam' && !cut.boom && t > 1.5) { cut.boom = true; P.shake = 1.2; ctx.blip(60, 20, 1.2, 'sawtooth', 0.3); for (let i = 0; i < 60; i++) ctx.puff(mesh.position, new THREE.Vector3((Math.random() - 0.5) * 40, Math.random() * 8, (Math.random() - 0.5) * 40), i % 3 ? '#c46a3a' : '#888', 3, 1.4); }
+    if (style === 'land' && t < ENTER && Math.random() < 0.6) ctx.puff(mesh.position, new THREE.Vector3((Math.random() - 0.5) * 6, -18, (Math.random() - 0.5) * 6), '#ffd27a', 1.6, 0.5);
+    if (style === 'overtake' && !cut.boom && t > 0.6) { cut.boom = true; ctx.blip(330, 290, 0.7, 'square', 0.12); }
+    if (P.shake > 0) P.shake = Math.max(0, P.shake - dt * 1.5);
+    const li = t < ENTER ? -1 : Math.min(cut.lines.length - 1, Math.floor((t - ENTER) / LINE_T));
+    if (li !== cut.line) { cut.line = li; if (li >= 0) say(li); if (li === 0) ctx.$('cineCard').classList.add('show'); }
+    if (li === 1) ctx.$('cineCard').classList.remove('show');
+    const fr = ctx.frame(P.s);
+    if (li < 0) {
+      // entrance: low behind-the-shoulder shot from the car, tracking the boss in
+      if (style === 'overtake') {
+        // the truck charges up from behind and blows past: a low shot from the roadside, panning with it
+        ctx.world(P.s + 10, P.d - Math.sign(P.d || 1) * 7, P.y + 1.0, cv);
+        cl.copy(mesh.position); cl.y += size.y * 0.5;
+      } else {
+        ctx.world(P.s - 7, P.d - 3.2, P.y + 1.1 + t * 0.25, cv);
+        cl.copy(bossW).lerp(ctx.car.position, 0.15);
+      }
+    } else if (cut.lines[li][0] === 'hero') {
+      // reverse shot: in front of the car looking back at it, the boss looming over its shoulder
+      const lt = t - ENTER - li * LINE_T;
+      // over the shoulder: the car in the foreground, the boss waiting up the road
+      ctx.world(P.s - 6.5 + lt * 0.6, P.d - Math.sign(P.d || 1) * 2.2, P.y + 1.9, cv);
+      cl.copy(ctx.car.position).lerp(bossW, 0.3);
+    } else {
+      // the boss: a slow low-angle orbit that pushes in
+      const lt = t - ENTER - li * LINE_T, a = (li % 2 ? -0.9 : 0.7) + lt * 0.18 * (li % 2 ? 1 : -1);
+      const r = big * ((overlord ? 1.7 : 1.25) - lt * 0.08) + (overlord ? 12 : 6);
+      const side = new THREE.Vector3(fr.f.z, 0, -fr.f.x);
+      cv.copy(bossW).addScaledVector(fr.f, -Math.cos(a) * r).addScaledVector(side, Math.sin(a) * r);
+      cv.y = Math.max(ctx.car.position.y + 1.2, bossW.y - big * 0.25);
+      cl.copy(bossW); cl.y -= big * 0.12; // frame it a little high, clear of the subtitle
+    }
+    camera.position.copy(cv);
+    if (P.shake > 0) camera.position.add(new THREE.Vector3((Math.random() - 0.5), (Math.random() - 0.5), 0).multiplyScalar(P.shake * 0.8));
+    camera.lookAt(cl);
+    camera.fov += ((li < 0 ? 52 : 40) - camera.fov) * Math.min(1, dt * 4); camera.updateProjectionMatrix();
+    return true;
   }
   function end() {
     B.active = false; B.done = true;
@@ -1240,6 +1393,7 @@ export function createBoss(ctx, key, protos, opts) {
   }
 
   function reset() {
+    if (cut) { mesh.scale.setScalar(cut.scale); cut = null; ctx.$('cine').hidden = true; document.body.classList.remove('cine'); }
     if (overlord) { const ud = mesh.userData, hd = ud.heads[0]; ud.eye = hd.eye; ud.eyeMat = hd.eyeMat; ud.eyeCol = hd.col; }
     for (const c of B.cones) { ctx.scene.remove(c.m); if (c.q) ctx.removePuddle(c.q); }
     Object.assign(B, { hp: def.hp, active: false, done: false, defeated: false, fleeing: false, land: null, landT: 4, feud: null, feudT: 9, head: 0, headT: 6, telegraph: null, beam: null, phase: 1, atkT: 4, cones: [], coilHint: false, jumpHintAt: null, fired: null, wasFired: false });
@@ -1278,5 +1432,5 @@ export function createBoss(ctx, key, protos, opts) {
       for (let i = 0; i < 12; i++) ctx.puff(c.m.position, new THREE.Vector3((Math.random() - 0.5) * 10, Math.random() * 6, (Math.random() - 0.5) * 10), i % 2 ? '#ffb347' : '#ddd', 1.1, 0.5);
     } }));
   }
-  return { B, update, sync, reset, fireCoil, posterPose, roofAt, damage, targets };
+  return { B, update, sync, reset, fireCoil, posterPose, roofAt, damage, targets, cine, skipCut: endCut, get inCut() { return !!cut; }, get cutT() { return cut?.t; } };
 }

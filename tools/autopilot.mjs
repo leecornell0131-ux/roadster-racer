@@ -17,6 +17,8 @@ for (const ev of evs) {
   await p.goto(`http://localhost:8123/index.html?stage=${st}&ev=${i}&unlock`);
   await p.waitForFunction(() => window.__game && __game.state === 'poster', null, { timeout: 120000 });
   await p.evaluate(() => { localStorage.clear(); });
+  // COP=n: give the car the 그럭 copilot at level n and stop the bot doing the landings and shooting itself
+  if (process.env.COP) await p.evaluate((n) => { __game.save.up.copilot = n; __game.cop = true; }, +process.env.COP);
   await p.evaluate(() => { document.getElementById('startBtn').click(); __game.skipCount(); __game.manual = true; });
   await p.waitForFunction(() => __game.state === 'race', null, { timeout: 30000 });
   let res = null;
@@ -60,11 +62,11 @@ for (const ev of evs) {
         if (M.type === 'tutorial' && +hud.split('/')[0] === 6 && !P.grounded) I.axis = 1;
         I.brake = wantV != null && P.v > wantV;
         // perfect landing: thrust just before touchdown
-        if (!P.grounded) { const gr = g.carGround(P.s, P.d, P.y), fall = -(P.vy - (P.kG || 0) * 0); I.jump = fall > 0 && (P.y - gr) / Math.max(fall, 0.1) < 0.7; } else I.jump = false;
+        if (g.cop) I.jump = false; else if (!P.grounded) { const gr = g.carGround(P.s, P.d, P.y), fall = -(P.vy - (P.kG || 0) * 0); I.jump = fall > 0 && (P.y - gr) / Math.max(fall, 0.1) < 0.7; } else I.jump = false;
         if (M.type !== 'tutorial' && P.boostG >= 35 && kMax < 0.004 && !I.brake) I.boost = true; else if (M.type !== 'tutorial') I.boost = false;
-        if (g.boss?.B.active && B.t > B.fireT) { I.fireEdge = true; B.fireT = B.t + 0.8; }
+        if (!g.cop && g.boss?.B.active && B.t > B.fireT) { I.fireEdge = true; B.fireT = B.t + 0.8; }
         // gun stages: hold fire in bursts so it never overheats
-        if (g.ST?.gun) I.fire = P.overheat <= 0 && P.heat < (I.fire ? 85 : 40);
+        if (g.ST?.gun && !g.cop) I.fire = P.overheat <= 0 && P.heat < (I.fire ? 85 : 40);
         I.gas = true;
         g.step(DT);
         I.jumpEdge = false; if (M.type === 'tutorial') I.boost = false;
@@ -74,7 +76,7 @@ for (const ev of evs) {
     });
   }
   await p.waitForTimeout(1500);
-  const out = await p.evaluate(() => ({ title: document.getElementById('rTitle').textContent, stars: [...document.querySelectorAll('#rStarList li')].map((l) => l.textContent), goal: document.getElementById('rGoal').textContent, play: JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => k.includes('roadster')) || 'x') || 'null')?.camp }));
+  const out = await p.evaluate(() => ({ title: document.getElementById('rTitle').textContent, perf: document.getElementById('rPerfect').textContent, hp: document.getElementById('rHp').textContent, boss: document.getElementById('rBoss').textContent, stars: [...document.querySelectorAll('#rStarList li')].map((l) => l.textContent), goal: document.getElementById('rGoal').textContent, play: JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => k.includes('roadster')) || 'x') || 'null')?.camp }));
   console.log(ev, JSON.stringify({ t: res?.t, s: res?.s, ...out, errs: errs.slice(0, 3) }));
   await p.close();
 }
