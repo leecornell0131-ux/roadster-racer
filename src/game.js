@@ -1945,7 +1945,7 @@ $('garageBtn').addEventListener('click', openGarage);
 $('garageBtn2').addEventListener('click', openGarage);
 $('gClose').addEventListener('click', () => { $('garage').hidden = true; });
 const PASS_DOGE = 9999999;
-function passDoge() { if (save.allPass) save.doge = PASS_DOGE; }
+function passDoge() { if (!save.allPass) return; if (save.dogeReal == null) save.dogeReal = save.doge; save.doge = PASS_DOGE; } // a save from before this field parks its balance on first use
 function refreshSaveLine() { passDoge(); grantParts(); const b = save.camp[ST.evKey]?.best || save.bests[ST.id]; $('saveLine').textContent = `LV ${save.level} · Ð ${save.doge.toLocaleString()} · 차체 ${Math.round(100 * hpF())}% · 부품 ${save.parts}${b ? ` · 최고 기록 ${fmtTime(b)}` : ''}`; }
 // stage texts, stage picker, next-stage button
 // ---------- campaign ----------
