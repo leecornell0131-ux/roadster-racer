@@ -91,7 +91,7 @@ export default {
       mission: {
         type: 'tutorial', perfect: 1, time: 50,
         steps: [
-          { text: '↑ 누른 채 ← → 로 초록 게이트 통과', touch: '왼쪽 엄지를 누르고 있으면 가속 · 옆으로 밀면 조향', say: '↑(휴대폰은 왼쪽 엄지를 누르고 있기)가 가속이야. 떼면 서서히 멈춰. 초록 게이트로 들어가.', hint: '게이트 쪽으로 미리 조향해요', back: 120, v: 26,
+          { text: '↑ 누른 채 ← → 로 초록 게이트 통과', touch: '조이스틱 앞으로 = 가속 · 옆으로 = 조향', say: '↑가 가속이야. 휴대폰은 조이스틱을 앞으로 밀어. 떼도 관성으로 쭉 가. 초록 게이트로 들어가.', hint: '게이트 쪽으로 미리 조향해요', back: 120, v: 26,
             build: (ctx) => gate(ctx, 220, -7.5), test: (ctx) => (ctx.P.s > 220 ? Math.abs(ctx.P.d + 7.5) < 3.2 : null) },
           { text: '반대쪽 게이트로!', touch: '반대쪽 게이트로!', say: '좋아. 이번엔 반대쪽.', hint: '게이트 쪽으로 미리 조향해요', back: 245, v: 30,
             build: (ctx) => gate(ctx, 330, 7.5), test: (ctx) => (ctx.P.s > 330 ? Math.abs(ctx.P.d - 7.5) < 3.2 : null) },

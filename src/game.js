@@ -88,7 +88,7 @@ const SAVE_KEY = 'roadster-racer-save-v1';
 const save = loadSave();
 function loadSave() {
   // camp: per event key ('austin:deliver') { done, stars, best, score, play (seconds actually played), tries }
-  const base = () => ({ level: 1, xp: 0, doge: 0, best: 0, bests: {}, camp: {}, eggs: {}, ach: {}, play: 0, hp: 100, parts: 3, partsT: Date.now(), up: { magnet: 0, tank: 0, comp: 0, motor: 0, armor: 0, optimus: 0 } });
+  const base = () => ({ level: 1, xp: 0, doge: 0, best: 0, bests: {}, camp: {}, eggs: {}, ach: {}, play: 0, hp: 100, parts: 3, partsT: Date.now(), up: { magnet: 0, tank: 0, comp: 0, motor: 0, fan: 0, armor: 0, optimus: 0 } });
   try {
     const s = Object.assign(base(), JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); s.up = Object.assign(base().up, s.up);
     if (s.best && !s.bests.austin) s.bests.austin = s.best; // v1 saves kept one best time (Austin)
@@ -137,11 +137,15 @@ const UPGRADES = {
   tank: { name: '압축공기 탱크', desc: (l) => `점프 최대 +${l}회`, max: 4, cost: (l) => Math.round(180 * Math.pow(1.9, l)) },
   comp: { name: '컴프레서', desc: (l) => `점프 충전 ${(recharge(l) * SLOW).toFixed(1)}초`, max: 5, cost: (l) => Math.round(90 * Math.pow(1.65, l)) },
   motor: { name: '듀얼 모터', desc: (l) => `최고속도 +${l * 4 * 3.6 | 0}km/h`, max: 6, cost: (l) => Math.round(110 * Math.pow(1.6, l)) },
+  fan: { name: '흡착 팬 (스페이스X 패키지)', desc: (l) => `코너 접지력 ${(gripLimit(l) / 9.8).toFixed(1)}G · 더 빠르게 꺾어도 안 밀려요`, max: 6, cost: (l) => Math.round(130 * Math.pow(1.65, l)) },
   armor: { name: '배터리 팩 보강', desc: (l) => `최대 내구도 ${100 + l * 20}`, max: 5, cost: (l) => Math.round(150 * Math.pow(1.7, l)) },
   optimus: { name: '옵티머스 동승 정비', desc: (l) => (l ? `옵티머스가 옆자리에서 초당 ${(0.35 + 0.35 * l).toFixed(2)}씩 수리 · 초록 구간까지만` : '옵티머스가 옆자리에 타서 달리는 중에 고쳐 줘요 · 초록 구간까지만'), max: 3, cost: (l) => Math.round(400 * Math.pow(2, l)) },
 };
 const magnetRange = (l = save.up.magnet) => 3 + l * 1.6 + (save.level - 1) * 0.15;
 const recharge = (l = save.up.comp) => 8 - l * 0.9;
+// tyre grip: the sideways acceleration (m/s²) the car can hold in a bend before it slides wide. The suction
+// fan upgrade pulls the car onto the road and lets it ignore more of the centrifugal force (user, 2026-10-24)
+const gripLimit = (l = save.up.fan || 0) => 14 + l * 4;
 const maxCharges = () => Math.min(12, 2 + save.level + save.up.tank);
 
 // ---------- track geometry ----------
@@ -940,8 +944,9 @@ input.axis = 0;
     knob.style.transform = `translate(${dx}px, ${dy}px)`;
     const a = dx / R, dead = 0.08, m = Math.max(0, Math.abs(a) - dead) / (1 - dead);
     input.axis = Math.sign(a) * Math.pow(m, 1.35);
-    // a thumb on the stick is the throttle; pulled down hard it brakes instead. Lift it to coast.
-    input.stickBrake = dy > R * 0.55; input.stickGas = !input.stickBrake;
+    // a 2D stick: forward is the throttle (proportional), back brakes and then reverses; let go to coast
+    const fwd = -dy / R;
+    input.stickBrake = fwd < -0.35; input.stickGas = fwd > 0.15 ? Math.min(1, (fwd - 0.15) / 0.6) : 0;
   };
   zone.addEventListener('pointerdown', (e) => {
     if (id !== null) return; e.preventDefault(); id = e.pointerId; zone.setPointerCapture(id);
@@ -1075,7 +1080,10 @@ function updateNav() {
   const dist = t.in - P.s, now = dist < 50;
   nav.hidden = false; nav.className = now ? 'panel now' : 'panel'; setArrow(t.a);
   $('navDist').textContent = now ? '지금' : fmtDist(dist);
-  $('navTxt').textContent = turnWord(t.a) + (t.fork ? ` · ${t.a > 0 ? '오른쪽' : '왼쪽'} 끝 차로는 우회로` : '');
+  // the fastest the tyres (and the fan upgrade) hold this corner at, as the speedometer shows it
+  const vCorner = Math.sqrt(gripLimit() * t.r), kmhCorner = Math.round(vCorner * 3.6 * 1.1 / 5) * 5;
+  $('navTxt').textContent = turnWord(t.a) + ` · ${kmhCorner}km/h 이하` + (t.fork ? ` · ${t.a > 0 ? '오른쪽' : '왼쪽'} 끝 차로는 우회로` : '');
+  if (!now && dist < 160 && P.v > vCorner + 3) nav.className = 'panel now';
   const n = NAV_TURNS[i + 1];
   $('navNext').textContent = n && n.in - t.out < 900 ? `그다음 ${turnGlyph(n.a)} ${turnWord(n.a)} ${fmtDist(n.in - P.s)}` : '';
   if (t.fork && !P.navWarned?.has(t.s) && dist < 320) { (P.navWarned ??= new Set()).add(t.s); haptic('fork'); }
@@ -1162,7 +1170,7 @@ function updateHUD() {
   const pr = THREE.MathUtils.clamp(P.s / FINISH_S, 0, 1) * 100;
   hud.prog.style.width = pr + '%'; hud.progDot.style.left = pr + '%';
   updateNav(); updateRoute(); updatePeek();
-  hud.kmh.textContent = Math.round(P.v * 3.6 * 1.1);
+  hud.kmh.textContent = P.v < -0.5 ? `R ${Math.round(-P.v * 3.6 * 1.1)}` : Math.round(P.v * 3.6 * 1.1);
   hud.boost.style.width = `${P.boostG}%`;
   hud.fuel.style.width = `${100 * P.fuel / AIR_FUEL}%`;
   $('hpFill').style.width = `${100 * hpF()}%`; $('hpMeter').dataset.z = hpZone();
@@ -1312,7 +1320,7 @@ function stepRival(t, dt) {
   let target = t.finishT != null ? 18 : t.base * band;
   // real corners: rivals brake for them like you do
   let kMax = 0; for (let ds = 0; ds < 60; ds += 6) kMax = Math.max(kMax, Math.abs(curvature(t.s + ds)));
-  if (kMax > 0) target = Math.min(target, Math.sqrt(60 / kMax));
+  if (kMax > 0) target = Math.min(target, Math.sqrt(16 / kMax)); // rivals have stock grip plus a little
   let lead = null;
   for (const o of traffic) if (o !== t && o.s > t.s && o.s - t.s < 38 && Math.abs(o.d - t.dT) < 2.8 && (!lead || o.s < lead.s)) lead = o;
   if (lead && lead.v < target - 2 && t.pend == null) {
@@ -1402,15 +1410,19 @@ function step(dt) {
   let vmax = (62 + save.level * 0.8 + save.up.motor * 4) * hpSpeed() + (boosting ? 20 : 0);
   // throttle: ↑/W, or a thumb on the touch stick. No input = coasting on rolling drag (user, 2026-10-24:
   // the car shouldn't keep accelerating by itself); a boost still pushes on its own
-  const gas = input.gas || input.stickGas;
-  let acc = gas || boosting ? (boosting ? 34 : 15) * Math.max(0, 1 - P.v / vmax) + (boosting ? 6 : 0) : P.grounded ? -(2.5 + P.v * 0.06) : 0;
+  // throttle 0..1: ↑/W is full, the touch stick pushed forward is proportional
+  const gas = input.gas ? 1 : input.stickGas || 0;
+  // coasting keeps most of the momentum: rolling resistance plus air drag growing with speed
+  const drag = P.grounded ? Math.sign(P.v) * (0.3 + 0.00025 * P.v * P.v) : 0;
+  let acc = boosting ? 34 * Math.max(0, 1 - P.v / vmax) + 6 : gas > 0 ? 15 * gas * Math.max(0, 1 - P.v / vmax) + (P.v < 0 ? 20 : 0) : -drag;
   if (P.v > vmax) acc = -12;
   // launch: the cold-gas thrusters fire with the motors, 0-100 km/h (as the HUD shows it) in about 1.1 s
   if (P.launchT > 0 && gas) { P.launchT -= dt; acc = Math.max(acc, 23.5); }
   if (!P.t100 && P.v * 3.6 * 1.1 >= 100) { P.t100 = raceT; if (raceT < 1.2) unlockAch('launch'); if (raceT < 2) floatText(`0→100km/h ${(raceT * SLOW).toFixed(2)}초 · 콜드가스 스러스터`); }
   if (P.crashT > 0) { P.crashT -= dt; acc *= 0.3; }
-  if ((input.brake || input.stickBrake) && P.grounded) acc = -42;
-  P.v = Math.max(0, P.v + acc * dt);
+  // brake; held at a standstill it reverses (slowly)
+  if ((input.brake || input.stickBrake) && P.grounded) acc = P.v > 0.3 ? -42 : P.v > -9 ? -7 : 0;
+  P.v = Math.max(-9, P.v + acc * dt);
   if (P.boostT > 0) P.boostT -= dt;
   if (input.boost && !boosting && P.boostG >= 35) { P.boostT = P.boostG / 35 * 1.1; P.boostG = 0; hissBurst(P.boostT); toast('부스트!', '', '#ff3d6e'); }
 
@@ -1424,9 +1436,12 @@ function step(dt) {
   const kNow = curvature(P.s), stretch = Math.max(0.3, 1 + P.d * kNow);
   const lat = P.v * P.v * kNow / stretch; // m/s² toward the outside of the bend
   P.lat = lat;
-  P.d += lat * (P.grounded ? 0.075 : 0.11) * dt;
-  if (P.grounded && Math.abs(lat) > 62) {
-    P.v -= (Math.abs(lat) - 62) * 0.14 * dt; // tyres at the limit scrub speed
+  // within the grip limit the tyres hold the line (a light pull you steer against); past it the car
+  // slides wide in proportion to the excess and the tyres scrub speed
+  const gl = gripLimit(), over = Math.max(0, Math.abs(lat) - gl) * Math.sign(lat);
+  P.d += (P.grounded ? Math.min(Math.abs(lat), gl) * Math.sign(lat) * 0.03 + over * 0.16 : lat * 0.11) * dt;
+  if (P.grounded && Math.abs(over) > 0) {
+    P.v -= Math.abs(over) * 0.12 * dt * Math.sign(P.v); // tyres at the limit scrub speed
     if (Math.random() < 0.5) puff(world(P.s - 1.5, P.d + Math.sign(lat) * 0.8, 0.2), new THREE.Vector3((Math.random() - 0.5) * 3, 1.5, (Math.random() - 0.5) * 3), '#9a9aa4', 0.9, 0.6);
     if (!P.skidMsg) { P.skidMsg = 1; floatText('타이어 한계! 코너 전에 ↓ 브레이크'); }
   } else if (Math.abs(lat) < 20) P.skidMsg = 0;
@@ -2124,7 +2139,7 @@ async function boot() {
 stageUI();
 document.fonts?.ready.then(() => setTimeout(boot, 30)) ?? setTimeout(boot, 30);
 requestAnimationFrame(loop);
-window.__game = { ST, get boss() { return boss; }, get pickups() { return pickups; }, get traffic() { return traffic; }, P, get state() { return state; }, input, scene, camera, car, THREE, realcars: { loadCar, instance, CARS }, models: { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100 },
+window.__game = { gripLimit, ST, get boss() { return boss; }, get pickups() { return pickups; }, get traffic() { return traffic; }, P, get state() { return state; }, input, scene, camera, car, THREE, realcars: { loadCar, instance, CARS }, models: { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100 },
   gunDbg: () => ({ heat: P.heat, over: P.overheat, me: world(P.s, P.d, P.y + 1).toArray(), targets: gunTargets().map((t) => t.pos.toArray()), live: gunShots.filter((x) => x.live).length }),
   freeze(on) { this.frozen = on; }, skipCount() { countdown = 0.01; }, snap() { snapCam = true; }, pcam: PCAM, get stage() { return ST; }, renderer, step: (dt) => step(dt),
   // for the autopilot that measures clean-run times: with manual set, only step() advances the race

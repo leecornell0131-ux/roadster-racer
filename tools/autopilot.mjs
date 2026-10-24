@@ -53,7 +53,7 @@ for (const ev of evs) {
         if (M.type === 'stunt' && P.grounded && P.charges > 1 && B.t > B.rollT) { I.jumpEdge = true; B.rollT = B.t + 1.6; }
         // corners: hold a speed the tyres can carry
         let kMax = 0; for (let ds = 0; ds < 60; ds += 5) kMax = Math.max(kMax, Math.abs(g.curvature(P.s + ds)));
-        if (kMax > 0) { const vc = Math.sqrt(58 / kMax); if (P.v > vc + 1.5) wantV = Math.min(wantV ?? 1e9, vc); }
+        if (kMax > 0) { const vc = Math.sqrt(g.gripLimit() * 0.92 / kMax); if (P.v > vc + 1.5) wantV = Math.min(wantV ?? 1e9, vc); }
         // steering: proportional to the error plus the bend's push
         const ff = -(P.lat || 0) * 0.075 / 15;
         I.axis = Math.max(-1, Math.min(1, (td - P.d) * 0.3 + ff * (P.grounded ? 1 : 0)));
