@@ -38,3 +38,16 @@ Parked-traffic LODs in assets/cars/lod/ are simplified copies of the models abov
 | Palm tree / Palm Tree | galaxxxy / Arvid Klint | not used (too stylised next to the LA palms) |
 
 Source files: tools/pack-model.mjs from the Sketchfab downloads; sizing and facing in src/props.js.
+
+## Celebrity heads (assets/props/h_*.json, all CC BY 4.0; cut down to the head in src/heads.js)
+
+| Model | Author | Used for |
+|---|---|---|
+| Elon Musk face 3d | riccardogiorato | radio portrait |
+| Donald Trump Head | Freegives | DC ally radio portrait |
+| Mark Zuckerberg Low Poly | Vadim Fedenko | Metaverse boss (wears the headset), boss bar |
+| Jeff Bezos | EntropyNine | Moon boss passenger, boss bar |
+| JOE BIDEN | M.H6LL ENTERAR/VR | DC truck bobblehead, boss bar |
+| BARACK OBAMA | LOUIS | DC 747 drone rider (black scan backdrop removed) |
+
+Real likenesses appear under parody names; check store rules on real people before an App Store release.

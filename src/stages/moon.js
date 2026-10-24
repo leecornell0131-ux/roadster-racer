@@ -77,6 +77,7 @@ export default {
     parcel: { make: () => makeParcelSat('#b88a58', '당일배송'), name: '배송 로버', speed: [19, 24], n: 6, color: '#b88a58' },
   },
   boss: 'bezos',
+  heads: ['bezos'],
   radio: [
     [20, '달 도착! HLS에서 랩터 엔진 두 개 떼다 붙였어. 이제 쏠 수 있다!'],
     [300, '중력이 약해서 크레이터 가장자리에서 붕 떠. 착지는 점프 꾹!'],

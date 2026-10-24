@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { instance, addSensorKit } from './realcars.js';
 import { wheel, makeRTX5090 } from './models.js';
 import { prop } from './props.js';
+import { head } from './heads.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 const LANE_W = 6;
@@ -228,6 +229,9 @@ export function buildHeadset() {
     real.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.multiplyScalar(2.2); o.material.envMapIntensity = 2.5; } });
     label.position.set(0, H / 2 + 0.05, 0.4); label.rotation.x = -Math.PI / 2;
   }
+  // the wearer: a giant Zuck head behind the visor, eyes level with the screen
+  const zuck = head('zuck', 9.5);
+  if (zuck) { zuck.position.set(0, -0.6, -6.2); g.add(zuck); g.userData.bobble = zuck; }
   const size = new THREE.Vector3(W, H, D);
   g.userData = { size, pivots: [], jets: [halo], eyeMat, eye, eyeCol: new THREE.Color(0.32, 0.32, 0.32), happy, lizard, tongue, screen };
   return g;
@@ -296,6 +300,8 @@ function buildAF1Drone() {
       lab.position.set(sx * 0.62, 0.05, -1.2); lab.rotation.y = sx * Math.PI / 2; g.add(lab);
     }
   }
+  const obama = head('obama', 2.4);
+  if (obama) { obama.position.set(0, 1.9, -2.8); g.add(obama); }
   // it's a drone: four lift rotors on outriggers
   const pivots = [];
   for (const [x, z] of [[-3.4, -3.2], [3.4, -3.2], [-3.4, 3.6], [3.4, 3.6]]) {
@@ -385,6 +391,9 @@ export function buildIceTruck() {
     coneG.position.set(0, REAL_ICE.coneY, REAL_ICE.coneZ); eye.position.y = 1.2; eye.scale.set(0.6, 1, 0.6);
     roofs = REAL_ICE.roofs;
   }
+  // Uncle Joe himself, a bobblehead poking out of the roof hatch at the back, beside the cone
+  const joe = head('biden', 3.6);
+  if (joe) { joe.position.set(-1.25, (real ? REAL_ICE.roofs[0].top : roofY) + 1.5, 3.9); joe.rotation.z = 0.12; g.add(joe); }
   // the drone that joins in phase 2
   const drone = buildAF1Drone(); drone.position.set(0, roofY + 8, 0); drone.visible = false; g.add(drone);
   const size = new THREE.Vector3(W, roofY + 4.8, L);
@@ -441,7 +450,9 @@ export function buildShepherd() {
   const win = new THREE.Mesh(new THREE.CircleGeometry(0.85, 32), eyeMat); win.position.set(0, capY + 1.3, 2.0); win.rotation.x = -0.32; g.add(win);
   const frame = new THREE.Mesh(new THREE.TorusGeometry(0.88, 0.08, 8, 32), metal); frame.position.copy(win.position); frame.rotation.x = -0.32; g.add(frame);
   // the passenger: a silhouette in the window
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 12), new THREE.MeshBasicMaterial({ color: '#2a1a12' })); head.position.set(0, capY + 1.25, 1.75); g.add(head);
+  const jeff = head('bezos', 3.4);
+  if (jeff) { jeff.position.set(0, capY + 1.6, 0.7); g.add(jeff); win.visible = frame.visible = false; } // the passenger is all head, and the hat is his
+  else { const sil = new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 12), new THREE.MeshBasicMaterial({ color: '#2a1a12' })); sil.position.set(0, capY + 1.25, 1.75); g.add(sil); }
   const eye = new THREE.Object3D(); eye.position.set(0, capY + 1.3, 2.2); eye.name = 'eye'; g.add(eye);
   // the hat: a cowboy hat sized for a rocket
   const felt = new THREE.MeshStandardMaterial({ color: '#d8c39a', roughness: 0.9 });
@@ -578,7 +589,7 @@ export const BOSSES = {
     },
   },
   headset: {
-    name: '리자드 저크의 메가 헤드셋', sub: '메가 퀘스트 프로 · 다리는 다음 업데이트에', hp: 110, appearAt: 760, giveUpAt: 3100, hover: 6.5, lizard: true,
+    face: 'zuck', name: '리자드 저크의 메가 헤드셋', sub: '메가 퀘스트 프로 · 다리는 다음 업데이트에', hp: 110, appearAt: 760, giveUpAt: 3100, hover: 6.5, lizard: true,
     xp: 420, doge: 220, need: ['avatar'],
     lines: {
       intro: '저기 거대 VR 헤드셋! 리자드 저크가 안에 있어. 하얀 선크림 뿌린 차선은 미끄러워!',
@@ -590,7 +601,7 @@ export const BOSSES = {
     },
   },
   icecream: {
-    name: '아이스크림 조의 트럭', sub: '+ 버락 오바바의 에어포스 원 드론', hp: 130, appearAt: 950, giveUpAt: 3020, ground: true, truck: true,
+    face: 'biden', name: '아이스크림 조의 트럭', sub: '+ 버락 오바바의 에어포스 원 드론', hp: 130, appearAt: 950, giveUpAt: 3020, ground: true, truck: true,
     xp: 480, doge: 260, need: [],
     bump: '아이스크림 트럭에 부딪힘', stompText: '트럭 지붕을 밟았다', dropHit: '규제 서류 폭탄!',
     lines: {
@@ -604,7 +615,7 @@ export const BOSSES = {
     },
   },
   bezos: {
-    name: '제프 배송스의 레이트 셰퍼드', sub: '배송스 오리진 · 항상 한 발 늦게 도착', hp: 170, appearAt: 700, giveUpAt: 3150, hover: 3, gap: 56, landGap: 34, shepherd: true, landing: true,
+    face: 'bezos', name: '제프 배송스의 레이트 셰퍼드', sub: '배송스 오리진 · 항상 한 발 늦게 도착', hp: 170, appearAt: 700, giveUpAt: 3150, hover: 3, gap: 56, landGap: 34, shepherd: true, landing: true,
     xp: 600, doge: 320, need: [],
     dropHit: '당일배송 폭탄!', beamText: ['프라임 레이저!', '반품 불가 · 급감속', '#7ab8ff'],
     lines: {
@@ -783,7 +794,8 @@ export function createBoss(ctx, key, protos) {
   }
   function start() {
     B.active = true; mesh.visible = true; B.s = ctx.P.s + 120; B.d = 0; B.y = def.hover + 14;
-    ctx.$('bossName').innerHTML = `${def.name}<small>${def.sub}</small>`;
+    const face = def.face && ctx.faces?.[def.face];
+    ctx.$('bossName').innerHTML = `${face ? `<img class="face" src="${face}" alt="">` : ''}${def.name}<small>${def.sub}</small>`;
     if (ground) { B.s = ctx.P.s + rearOff + 120; B.y = 0; B.d = ctx.LANES[(NL / 2) | 0]; }
     if (truck) { Object.assign(mesh.userData, home); mesh.userData.drone.visible = false; B.dozeT = 7; }
     ctx.$('bossBar').hidden = false; ctx.$('coilRow').hidden = false; ctx.$('fireBtn').hidden = false; document.querySelector('.speed').classList.add('boss');

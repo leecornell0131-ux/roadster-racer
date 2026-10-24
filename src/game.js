@@ -8,6 +8,7 @@ import { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100, makeBlack
 import { upgradeRoadster, loadCar, instance, addSensorKit, fleet, CARS } from './realcars.js';
 import { createBoss } from './boss.js';
 import { loadProps, prop, propCredits } from './props.js';
+import { loadHeads, portraits, headCredits } from './heads.js';
 import { STAGES, ORDER } from './stages/index.js';
 
 // ---------- quality ----------
@@ -38,7 +39,8 @@ const AIR_FUEL = 1.3;                     // seconds of landing thrust
 // ---------- cast ----------
 // Display names live here so parody names can replace real ones in one place.
 export const CAST = {
-  hero: { name: '일론', ava: 'EM' },
+  hero: { name: '일론', ava: 'EM', face: 'elon' },
+  trump: { name: '도널드 트럼펫', ava: 'DT', face: 'trump' },
 };
 
 // ---------- save ----------
@@ -504,6 +506,9 @@ const TRAFFIC = ST.traffic;
 const trafficProtos = {};
 const lodProtos = {}; // simplified copies for parked jams
 const propsReady = loadProps(ST.props || []);
+const HEAD_LIST = [...new Set(['elon', ...(ST.heads || [])])];
+const headsReady = loadHeads(HEAD_LIST);
+const FACES = {}; // speaker/boss key -> portrait data URL
 const trafficReady = Promise.all(Object.entries(TRAFFIC).map(async ([k, d]) => {
   await propsReady;
   try { const pr = d.make ? d.make() : await loadCar(d.car); trafficProtos[k] = d.kit ? addSensorKit(pr) : pr; }
@@ -688,14 +693,15 @@ function toast(big, small = '', color = '#38f5ff') {
   toastT = 1.6;
 }
 let radioT = 0;
-function radio(text, who = CAST.hero.name, ava = CAST.hero.ava) {
-  radioQueue.push({ text, who, ava });
+function radio(text, who = CAST.hero.name, ava = CAST.hero.ava, face = CAST.hero.face) {
+  radioQueue.push({ text, who, ava, face });
 }
 function updateRadio(dt) {
   radioT -= dt;
   if (radioT <= 0 && radioQueue.length) {
     const r = radioQueue.shift();
-    $('radioWho').textContent = r.who; $('radioAva').textContent = r.ava; hud.radioTxt.textContent = r.text;
+    $('radioWho').textContent = r.who; hud.radioTxt.textContent = r.text;
+    const av = $('radioAva'), img = FACES[r.face]; av.textContent = img ? '' : r.ava; av.style.backgroundImage = img ? `url(${img})` : '';
     hud.radio.classList.add('show'); radioT = 4.2;
   } else if (radioT <= 0) hud.radio.classList.remove('show');
 }
@@ -1007,7 +1013,7 @@ function step(dt) {
   }
 
   // radio
-  for (const [s, text] of RADIO_SCRIPT) if (P.s > s && !radioFlags.has(s)) { radioFlags.add(s); radio(text); }
+  for (const [s, text, who] of RADIO_SCRIPT) if (P.s > s && !radioFlags.has(s)) { radioFlags.add(s); const c = CAST[who] || CAST.hero; radio(text, c.name, c.ava, c.face); }
 
   if (P.s >= FINISH_S && !P.finished) finish();
   if (P.shake > 0) P.shake -= dt * 1.8;
@@ -1288,15 +1294,16 @@ const carReady = Promise.race([
   new Promise((ok) => setTimeout(ok, 20000)),
 ]);
 async function boot() {
-  await propsReady;
+  await propsReady; await headsReady;
+  try { Object.assign(FACES, portraits(HEAD_LIST)); } catch (e) { console.warn('portraits failed', e); }
   buildWorld();
   await carReady; await trafficReady;
   try {
-    boss = createBoss({ scene, P, LANES, ROAD_HALF, world, frame, carGround, puff, toast, radio, floatText, blip, gainXP, $, camera, car, addTraffic, crash, traffic: () => traffic,
+    boss = createBoss({ faces: FACES, scene, P, LANES, ROAD_HALF, world, frame, carGround, puff, toast, radio, floatText, blip, gainXP, $, camera, car, addTraffic, crash, traffic: () => traffic,
       addPuddle: (q) => PUDDLES.push(q), removePuddle: (q) => { const i = PUDDLES.indexOf(q); if (i >= 0) PUDDLES.splice(i, 1); },
       addDoge: (n) => { n = Math.max(n, -save.doge); save.doge += n; stats.dogeGain += n; writeSaveSoon(); } }, ST.boss, trafficProtos);
   } catch (e) { console.warn('boss skipped', e); boss = null; }
-  $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · ' + propCredits(ST.props || []).map((c) => c + ' · ').join('') + 'Textures & HDRI: Poly Haven, ambientCG (CC0) · Earth & stars: NASA Blue Marble, Black Marble, SVS Deep Star Maps';
+  $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · ' + [...propCredits(ST.props || []), ...headCredits(HEAD_LIST)].map((c) => c + ' · ').join('') + 'Textures & HDRI: Poly Haven, ambientCG (CC0) · Earth & stars: NASA Blue Marble, Black Marble, SVS Deep Star Maps';
   resetRace(); placeCar(); syncTraffic(0); syncPickups(0);
   state = 'poster';
   $('startBtn').disabled = false; $('startBtn').textContent = '출발';

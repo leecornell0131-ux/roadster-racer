@@ -77,6 +77,7 @@ export default {
     ioniq5: { car: 'ioniq5', name: '사내 셔틀', speed: [18, 22], n: 2, range: [60, 600], color: '#f2f2f0' },
   },
   boss: 'headset',
+  heads: ['zuck'],
   props: ['vrheadset'],
   radio: [
     [20, '멘로파크야. 리자드 저크 본사. 직원들 표정이 다 똑같지? 다 아바타라서 그래.'],
