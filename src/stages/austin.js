@@ -117,7 +117,7 @@ export default {
       boss: null, legend: null,
       ramps: (L) => rampRun(380, L - 200, 300, 3),
       traffic: more(1.0),
-      mission: { type: 'deliver', time: 140, allowMiss: 1, stops: [
+      mission: { type: 'deliver', time: 160, allowMiss: 1, stops: [
         { place: "Esther's Follies", name: '에스더스 폴리스', thanks: '코미디 쇼 늦지 않았어요!', line: '첫 손님 내렸다. 6번가 코미디 극장이야.' },
         { place: 'Mexic-Arte Museum', name: '멕시카르테 미술관', thanks: '그라시아스!' },
         { place: 'Austin Central Library', name: '오스틴 중앙도서관', thanks: '반납 기한 딱 맞췄어요', line: '도서관 옥상 정원 봤어? 거기서 GPU 식히면 딱인데.' },

@@ -111,7 +111,7 @@ export default {
       gaps: [], jams: [], swarm: null, ceilings: [], pickups: [], legend: null, holeBonus: null, boss: null, trafficMaxS: 9000,
       forks: (L, R) => bigTurns(R, 1).map((t) => ({ at: t.s, name: '정상 경로' })),
       ramps: (L) => rampRun(380, L - 200, 300, 3),
-      mission: { type: 'deliver', time: 150, allowMiss: 1, stops: [
+      mission: { type: 'deliver', time: 168, allowMiss: 1, stops: [
         { place: 'Los Angeles City Hall', name: 'LA 시청', thanks: '민원 접수 마감 전이에요!', line: '시청 직원 내렸다. 교통체증 대책 회의래. 10년째.' },
         { place: 'Walt Disney Concert Hall', name: '디즈니 콘서트홀', thanks: '리허설 안 늦었어요' },
         { place: 'Bradbury Building', name: '브래드버리 빌딩', thanks: '블레이드 러너 촬영지 맞죠?', line: '저 건물 블레이드 러너에 나왔어. 리플리컨트는 로보택시를 안 타.' },
