@@ -909,8 +909,8 @@ function spawnPickups() {
 }
 
 // ---------- input ----------
-const input = { left: false, right: false, jump: false, brake: false, boost: false, fire: false, jumpEdge: false, fireEdge: false };
-const KEYMAP = { KeyF: 'fire', KeyE: 'fire', Enter: 'fire', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'jump', ArrowUp: 'jump', KeyW: 'jump', ArrowDown: 'brake', KeyS: 'brake', ShiftLeft: 'boost', ShiftRight: 'boost', KeyB: 'boost' };
+const input = { left: false, right: false, jump: false, brake: false, boost: false, fire: false, gas: false, stickGas: false, stickBrake: false, jumpEdge: false, fireEdge: false };
+const KEYMAP = { KeyF: 'fire', KeyE: 'fire', Enter: 'fire', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'jump', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake', ShiftLeft: 'boost', ShiftRight: 'boost', KeyB: 'boost' };
 addEventListener('keydown', (e) => {
   const k = KEYMAP[e.code]; if (!k) return;
   e.preventDefault();
@@ -940,6 +940,8 @@ input.axis = 0;
     knob.style.transform = `translate(${dx}px, ${dy}px)`;
     const a = dx / R, dead = 0.08, m = Math.max(0, Math.abs(a) - dead) / (1 - dead);
     input.axis = Math.sign(a) * Math.pow(m, 1.35);
+    // a thumb on the stick is the throttle; pulled down hard it brakes instead. Lift it to coast.
+    input.stickBrake = dy > R * 0.55; input.stickGas = !input.stickBrake;
   };
   zone.addEventListener('pointerdown', (e) => {
     if (id !== null) return; e.preventDefault(); id = e.pointerId; zone.setPointerCapture(id);
@@ -948,7 +950,7 @@ input.axis = 0;
     stick.classList.add('on'); move(e);
   });
   zone.addEventListener('pointermove', (e) => { if (e.pointerId === id) { e.preventDefault(); move(e); } });
-  const end = (e) => { if (e.pointerId !== id) return; id = null; input.axis = 0; knob.style.transform = ''; stick.classList.remove('on'); home(); };
+  const end = (e) => { if (e.pointerId !== id) return; id = null; input.axis = 0; input.stickGas = input.stickBrake = false; knob.style.transform = ''; stick.classList.remove('on'); home(); };
   zone.addEventListener('pointerup', end); zone.addEventListener('pointercancel', end);
 }
 
@@ -1398,13 +1400,16 @@ function step(dt) {
   // speed
   const boosting = P.boostT > 0;
   let vmax = (62 + save.level * 0.8 + save.up.motor * 4) * hpSpeed() + (boosting ? 20 : 0);
-  let acc = (boosting ? 34 : 15) * Math.max(0, 1 - P.v / vmax) + (boosting ? 6 : 0);
+  // throttle: ↑/W, or a thumb on the touch stick. No input = coasting on rolling drag (user, 2026-10-24:
+  // the car shouldn't keep accelerating by itself); a boost still pushes on its own
+  const gas = input.gas || input.stickGas;
+  let acc = gas || boosting ? (boosting ? 34 : 15) * Math.max(0, 1 - P.v / vmax) + (boosting ? 6 : 0) : P.grounded ? -(2.5 + P.v * 0.06) : 0;
   if (P.v > vmax) acc = -12;
   // launch: the cold-gas thrusters fire with the motors, 0-100 km/h (as the HUD shows it) in about 1.1 s
-  if (P.launchT > 0) { P.launchT -= dt; acc = Math.max(acc, 23.5); }
+  if (P.launchT > 0 && gas) { P.launchT -= dt; acc = Math.max(acc, 23.5); }
   if (!P.t100 && P.v * 3.6 * 1.1 >= 100) { P.t100 = raceT; if (raceT < 1.2) unlockAch('launch'); if (raceT < 2) floatText(`0→100km/h ${(raceT * SLOW).toFixed(2)}초 · 콜드가스 스러스터`); }
   if (P.crashT > 0) { P.crashT -= dt; acc *= 0.3; }
-  if (input.brake && P.grounded) acc = -42;
+  if ((input.brake || input.stickBrake) && P.grounded) acc = -42;
   P.v = Math.max(0, P.v + acc * dt);
   if (P.boostT > 0) P.boostT -= dt;
   if (input.boost && !boosting && P.boostG >= 35) { P.boostT = P.boostG / 35 * 1.1; P.boostG = 0; hissBurst(P.boostT); toast('부스트!', '', '#ff3d6e'); }

@@ -65,6 +65,7 @@ for (const ev of evs) {
         if (g.boss?.B.active && B.t > B.fireT) { I.fireEdge = true; B.fireT = B.t + 0.8; }
         // gun stages: hold fire in bursts so it never overheats
         if (g.ST?.gun) I.fire = P.overheat <= 0 && P.heat < (I.fire ? 85 : 40);
+        I.gas = true;
         g.step(DT);
         I.jumpEdge = false; if (M.type === 'tutorial') I.boost = false;
       }
