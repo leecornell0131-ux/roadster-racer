@@ -119,7 +119,7 @@ function grantParts() {
 const hpSpeed = () => (hpF() >= RED ? 1 : 0.78 + 0.22 * hpF() / RED);
 function repair(withDoge) {
   if (save.hp >= hpMax()) return false;
-  if (withDoge) { const cost = 120; if (save.doge < cost) return false; save.doge -= cost; } else { if (save.parts < 1) return false; save.parts--; }
+  if (withDoge) { const cost = 120; if (save.doge < cost) return false; save.doge -= cost; passDoge(); } else { if (save.parts < 1) return false; save.parts--; }
   save.hp = Math.min(hpMax(), save.hp + hpMax() * PART_FRAC); writeSave(); return true;
 }
 // during a run: the fire burns, Optimus repairs
@@ -1916,7 +1916,7 @@ function startRace() {
   state = 'count'; countdown = 3.2;
 }
 // ---------- X Garage ----------
-function renderGarage() {
+function renderGarage() { passDoge();
   grantParts();
   $('gDoge').textContent = save.doge.toLocaleString();
   const left = save.parts >= PART_MAX ? '가득' : `${Math.ceil((PART_EVERY - (Date.now() - save.partsT)) / 60000)}분 뒤 +1`;
@@ -1937,14 +1937,16 @@ $('gList').addEventListener('click', (e) => {
   const k = e.target.closest('[data-up]')?.dataset.up; if (!k) return;
   const u = UPGRADES[k], l = save.up[k], cost = u.cost(l);
   if (l >= u.max || save.doge < cost) return;
-  save.doge -= cost; save.up[k]++; writeSave(); renderGarage(); refreshSaveLine();
+  save.doge -= cost; save.up[k]++; passDoge(); writeSave(); renderGarage(); refreshSaveLine();
   initAudio(); blip(520, 1560, 0.25, 'triangle', 0.15);
 });
 function openGarage() { renderGarage(); $('garage').hidden = false; $('gClose').focus(); }
 $('garageBtn').addEventListener('click', openGarage);
 $('garageBtn2').addEventListener('click', openGarage);
 $('gClose').addEventListener('click', () => { $('garage').hidden = true; });
-function refreshSaveLine() { grantParts(); const b = save.camp[ST.evKey]?.best || save.bests[ST.id]; $('saveLine').textContent = `LV ${save.level} · Ð ${save.doge.toLocaleString()} · 차체 ${Math.round(100 * hpF())}% · 부품 ${save.parts}${b ? ` · 최고 기록 ${fmtTime(b)}` : ''}`; }
+const PASS_DOGE = 9999999;
+function passDoge() { if (save.allPass) save.doge = PASS_DOGE; }
+function refreshSaveLine() { passDoge(); grantParts(); const b = save.camp[ST.evKey]?.best || save.bests[ST.id]; $('saveLine').textContent = `LV ${save.level} · Ð ${save.doge.toLocaleString()} · 차체 ${Math.round(100 * hpF())}% · 부품 ${save.parts}${b ? ` · 최고 기록 ${fmtTime(b)}` : ''}`; }
 // stage texts, stage picker, next-stage button
 // ---------- campaign ----------
 // every event of every region in play order; an event opens when the one before it is cleared
@@ -1992,7 +1994,12 @@ const TYPE_NAME = { tutorial: '연습', deliver: '배송', stunt: '스턴트', r
 function allPassUI() {
   const b = $('passBtn'); if (!b) return;
   b.textContent = UNLOCK_ALL ? '🔓 올패스 켬' : '🔒 올패스'; b.classList.toggle('on', UNLOCK_ALL);
-  b.onclick = () => { save.allPass = !save.allPass; UNLOCK_ALL = URL_UNLOCK || save.allPass; writeSaveSoon(); haptic('tap'); renderCampaign(); allPassUI(); };
+  b.onclick = () => {
+    save.allPass = !save.allPass; UNLOCK_ALL = URL_UNLOCK || save.allPass;
+    // all-pass money: the real balance is parked and comes back when all-pass goes off
+    if (save.allPass) { save.dogeReal = save.doge; passDoge(); } else if (save.dogeReal != null) { save.doge = save.dogeReal; delete save.dogeReal; }
+    writeSave(); haptic('tap'); renderCampaign(); allPassUI(); refreshSaveLine();
+  };
 }
 function renderCampaign() {
   // region chips: progress per region
