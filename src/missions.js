@@ -113,7 +113,7 @@ const TYPES = {
       step(dt) {
         flash -= dt;
         const st = cur(); if (!st) return;
-        const r = st.test(ctx, dt);
+        const r = st.test ? st.test(ctx, dt) : null;
         if (r === true) pass(); else if (r === false) retry();
         for (const o of objs) o?.tick?.(ctx.time());
       },

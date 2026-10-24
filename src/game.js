@@ -1994,7 +1994,7 @@ function loop(now) {
     else if (Math.ceil(countdown + dt) !== n) blip(440, 440, 0.15, 'square', 0.08);
   }
   if (state === 'race' && !hud.count.hidden && raceT > 0.8) hud.count.hidden = true;
-  if (state === 'race' && !paused) { tickAcc += dt; while (tickAcc >= TICK) { step(TICK); tickAcc -= TICK; } }
+  if (state === 'race' && !paused && !window.__game?.manual) { tickAcc += dt; while (tickAcc >= TICK) { step(TICK); tickAcc -= TICK; } }
   else if (state === 'finish') { P.v = Math.max(0, P.v - 30 * dt); P.s += P.v * dt; P.thrusting = false; }
   if (state !== 'loading') { placeCar(); syncTraffic(time); syncPickups(time); boss?.sync(time); }
   if (state === 'poster') posterStage(time);
@@ -2045,4 +2045,6 @@ document.fonts?.ready.then(() => setTimeout(boot, 30)) ?? setTimeout(boot, 30);
 requestAnimationFrame(loop);
 window.__game = { get boss() { return boss; }, get pickups() { return pickups; }, get traffic() { return traffic; }, P, get state() { return state; }, input, scene, camera, car, THREE, realcars: { loadCar, instance, CARS }, models: { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100 },
   gunDbg: () => ({ heat: P.heat, over: P.overheat, me: world(P.s, P.d, P.y + 1).toArray(), targets: gunTargets().map((t) => t.pos.toArray()), live: gunShots.filter((x) => x.live).length }),
-  freeze(on) { this.frozen = on; }, skipCount() { countdown = 0.01; }, snap() { snapCam = true; }, pcam: PCAM, get stage() { return ST; }, renderer, step: (dt) => step(dt) };
+  freeze(on) { this.frozen = on; }, skipCount() { countdown = 0.01; }, snap() { snapCam = true; }, pcam: PCAM, get stage() { return ST; }, renderer, step: (dt) => step(dt),
+  // for the autopilot that measures clean-run times: with manual set, only step() advances the race
+  manual: false, get mission() { return mission; }, get raceT() { return raceT + penalty; }, ramps: RAMPS, finishS: FINISH_S, LANES, curvature, forkAt, carGround };
