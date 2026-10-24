@@ -120,6 +120,8 @@ function build(k) {
   // golden grass: lift the green out of the photo so the hills read as dry Southern California grass
   grass.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.45, 0.4, 0.15))) * vec3(1.25, 1.0, 0.62), 0.75);'); };
 
+  // real-map events: downtown streets from OpenStreetMap, palms along the kerbs
+  if (k.CITY) { k.buildCity(); buildPalms(k, true); k.finishArch(k.ST.finishText || 'FINISH'); return; }
   // shoulders, then golden hills rolling up to the San Gabriels
   for (const side of [-1, 1]) {
     const sh = new THREE.Mesh(ribbon(-200, FINISH_S + 700, side * ROAD_HALF, side * (ROAD_HALF + 7), 6, () => 0.01, 6), concrete); sh.receiveShadow = true; scene.add(sh);
@@ -256,8 +258,9 @@ function buildLights(k) {
 }
 
 // Mexican fan palms (Washingtonia): very tall thin trunk, shaggy dead-frond skirt, round crown of fans
-function buildPalms(k) {
+function buildPalms(k, city = false) {
   const { scene, world, canvasTex } = k;
+  const FIN = city ? k.ST.finish : FINISH_S, RH = city ? k.ST.roadHalf : ROAD_HALF, groundY = city ? () => 0 : hillY;
   const bark = canvasTex(64, 512, (c, w, h) => {
     c.fillStyle = '#6d6257'; c.fillRect(0, 0, w, h);
     for (let y = 0; y < h; y += 5 + Math.random() * 4) { c.fillStyle = `rgba(${40 + Math.random() * 30},${34 + Math.random() * 25},${28 + Math.random() * 20},0.55)`; c.fillRect(0, y, w, 1.5 + Math.random() * 2); }
@@ -295,11 +298,14 @@ function buildPalms(k) {
   const crownGeo = mergeAll(crown);
   const skirtGeo = new THREE.CylinderGeometry(0.45, 0.62, 1.7, 10, 1, true); skirtGeo.translate(0, -0.75, 0);
   const list = [];
-  for (let s = -60; s < FINISH_S + 500; s += 22 + Math.random() * 30) {
+  const tmp = new THREE.Vector3();
+  for (let s = -60; s < FIN + (city ? 0 : 500); s += city ? 18 + Math.random() * 14 : 22 + Math.random() * 30) {
     for (const side of [-1, 1]) {
       if (Math.random() < 0.35) continue;
-      const d = side * (ROAD_HALF + 9 + Math.random() * (Math.random() < 0.6 ? 6 : 50));
-      list.push({ s: s + Math.random() * 12, d, h: 13 + Math.random() * 12, lean: (Math.random() - 0.5) * 0.08 });
+      const d = side * (city ? RH + 2.2 : RH + 9 + Math.random() * (Math.random() < 0.6 ? 6 : 50)), ps = s + Math.random() * 12;
+      // on real streets: kerbside only, never on a crossing road or inside a fork
+      if (city) { world(ps, d, 0, tmp); if (!k.clearOfRoad(tmp.x, tmp.z, -1.5) || k.forkZone(ps, d, 4)) continue; }
+      list.push({ s: ps, d, h: 13 + Math.random() * 12, lean: (Math.random() - 0.5) * 0.08 });
     }
   }
   const trunkMat = new THREE.MeshStandardMaterial({ map: bark, roughness: 0.95 });
@@ -310,7 +316,7 @@ function buildPalms(k) {
   const skirts = new THREE.InstancedMesh(skirtGeo, skirtMat, list.length);
   const m4 = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), e = new THREE.Euler();
   list.forEach((t, i) => {
-    world(t.s, t.d, hillY(t.s, t.d) - 0.2, p);
+    world(t.s, t.d, groundY(t.s, t.d) - 0.2, p);
     q.setFromEuler(e.set(t.lean, Math.random() * 6, t.lean * 0.7)); sc.set(1, t.h, 1); m4.compose(p, q, sc); trunks.setMatrixAt(i, m4);
     const top = new THREE.Vector3(0, t.h, 0).applyQuaternion(q).add(p);
     const kk = 0.85 + Math.random() * 0.3; sc.setScalar(kk);
