@@ -6,6 +6,9 @@ import fs from 'node:fs';
 
 const CITIES = {
   austin: { name: 'Austin, TX (downtown)', bbox: [30.25, -97.765, 30.29, -97.725] }, // south, west, north, east
+  la: { name: 'Los Angeles, CA (downtown, Arts District, 110/101 interchange)', bbox: [34.035, -118.275, 34.065, -118.225] },
+  sf: { name: 'San Francisco, CA (Financial District, North Beach, Lombard St, Embarcadero)', bbox: [37.775, -122.43, 37.81, -122.39] },
+  dc: { name: 'Washington, DC (National Mall, White House, Capitol Hill)', bbox: [38.88, -77.05, 38.905, -77.0] },
 };
 const MIRRORS = [
   'https://overpass-api.de/api/interpreter',
