@@ -480,6 +480,42 @@ function updatePuffs(dt) {
 
 // ---------- game state ----------
 const car = makeRoadster(); scene.add(car); kit.car = car;
+// SpaceX-package cold-gas thrusters behind the rear plate: two expanding nitrogen plumes, white with a cold
+// blue core, flickering. Fired by the launch (0-100 in ~1.1 s) and by the boost.
+const coldGas = (() => {
+  const g = new THREE.Group(); g.name = 'coldgas';
+  const mat = (col, k) => new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false,
+    uniforms: { amt: { value: 0 }, time: { value: 0 }, col: { value: new THREE.Color(...col) } },
+    vertexShader: 'varying vec2 vUv; varying vec3 vN, vV; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
+    fragmentShader: `uniform float amt, time; uniform vec3 col; varying vec2 vUv; varying vec3 vN, vV;
+      void main(){ float along = vUv.y; // 1 at the nozzle, 0 at the far end
+        float edge = pow(abs(dot(vN, vV)), ${k.toFixed(1)});
+        float ripple = 0.75 + 0.25 * sin(along * 38.0 - time * 70.0) * sin(vUv.x * 25.0 + time * 31.0);
+        float a = amt * pow(along, 1.6) * edge * ripple;
+        gl_FragColor = vec4(col * a, a); }`,
+  });
+  const outer = mat([1.6, 1.9, 2.2], 0.8), core = mat([1.4, 2.8, 4.2], 2.0);
+  const cone = (r, h) => { const c = new THREE.ConeGeometry(r, h, 20, 1, true); c.rotateX(-Math.PI / 2); c.translate(0, 0, h / 2); return c; };
+  for (const x of [-0.3, 0.3]) {
+    const o = new THREE.Mesh(cone(0.5, 3.4), outer), c = new THREE.Mesh(cone(0.19, 1.9), core);
+    for (const m of [o, c]) { m.position.set(x, 0.48, 2.12); m.frustumCulled = false; m.renderOrder = 3; g.add(m); }
+  }
+  g.userData = { outer, core, amt: 0 };
+  return g;
+})();
+function updateColdGas(dt, time) {
+  const on = state === 'race' && (P.launchT > 0 || P.boostT > 0);
+  const u = coldGas.userData; u.amt += ((on ? 1 : 0) - u.amt) * Math.min(1, dt * (on ? 18 : 6));
+  coldGas.visible = u.amt > 0.02;
+  for (const m of [u.outer, u.core]) { m.uniforms.amt.value = u.amt * (0.85 + Math.random() * 0.15); m.uniforms.time.value = time; }
+  coldGas.scale.set(1, 1, 0.8 + u.amt * 0.35 + Math.random() * 0.08);
+  // condensation: the expanding gas chills the air into a short white trail
+  if (on && Math.random() < 0.7) {
+    const fr = frame(P.s), base = world(P.s - 2.6, P.d + (Math.random() - 0.5) * 0.7, P.y + 0.45);
+    puff(base, new THREE.Vector3(-fr.f.x * 6 + (Math.random() - 0.5) * 3, 0.6 + Math.random(), -fr.f.z * 6 + (Math.random() - 0.5) * 3), '#eef8ff', 0.45, 0.4);
+  }
+}
 const magnetRing = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 1.6, 2.2), transparent: true, opacity: 0.22, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
 magnetRing.rotation.x = -Math.PI / 2; scene.add(magnetRing);
 const P = {};
@@ -490,7 +526,7 @@ const radioQueue = [];
 const radioFlags = new Set();
 
 function resetRace() {
-  Object.assign(P, { s: 0, d: 3, y: 0, v: 0, vy: 0, grounded: true, charges: maxCharges(), recharge: 0, fuel: AIR_FUEL, slope: 0, air: 0, boostT: 0, boostG: 30, crashT: 0, shake: 0, steerVis: 0, roll: 0, rollTo: 0, rollDir: 1, finished: false, coil: 0, bonkT: 0, roofRun: 0, lastG: 0, kG: 0, slipT: 0, slipV: 0, heat: 0, overheat: 0 });
+  Object.assign(P, { s: 0, d: 3, y: 0, v: 0, vy: 0, grounded: true, charges: maxCharges(), recharge: 0, fuel: AIR_FUEL, slope: 0, air: 0, boostT: 0, boostG: 30, crashT: 0, shake: 0, steerVis: 0, roll: 0, rollTo: 0, rollDir: 1, finished: false, coil: 0, bonkT: 0, roofRun: 0, lastG: 0, kG: 0, slipT: 0, slipV: 0, heat: 0, overheat: 0, launchT: 0, t100: 0 });
   boss?.reset(); for (const sh of gunShots) sh.m.visible = sh.live = false;
   raceT = 0; penalty = 0; swarmDone = false;
   Object.assign(stats, { perfect: 0, coins: 0, xpGain: 0, dogeGain: 0, jumpsOver: 0, roofs: 0 });
@@ -644,27 +680,60 @@ for (const btn of document.querySelectorAll('[data-key]')) {
   btn.addEventListener('pointercancel', off); btn.addEventListener('pointerleave', off);
 }
 document.body.classList.toggle('touch', IS_MOBILE);
+// touch steering: a floating analog stick. The base jumps to where the thumb lands; the knob's sideways
+// offset (with a small dead zone and a soft curve) is the steering amount, -1..1.
+input.axis = 0;
+{
+  const zone = document.getElementById('stickZone'), stick = document.getElementById('stick'), knob = document.getElementById('knob');
+  const R = 52; let id = null, ox = 0, oy = 0;
+  const home = () => { stick.style.left = stick.style.top = stick.style.bottom = ''; };
+  const move = (e) => {
+    let dx = e.clientX - ox, dy = e.clientY - oy; const len = Math.hypot(dx, dy);
+    if (len > R) { dx *= R / len; dy *= R / len; }
+    knob.style.transform = `translate(${dx}px, ${dy}px)`;
+    const a = dx / R, dead = 0.08, m = Math.max(0, Math.abs(a) - dead) / (1 - dead);
+    input.axis = Math.sign(a) * Math.pow(m, 1.35);
+  };
+  zone.addEventListener('pointerdown', (e) => {
+    if (id !== null) return; e.preventDefault(); id = e.pointerId; zone.setPointerCapture(id);
+    const r = zone.getBoundingClientRect(); ox = e.clientX; oy = e.clientY;
+    stick.style.bottom = 'auto'; stick.style.left = `${ox - r.left - 66}px`; stick.style.top = `${oy - r.top - 66}px`;
+    stick.classList.add('on'); move(e);
+  });
+  zone.addEventListener('pointermove', (e) => { if (e.pointerId === id) { e.preventDefault(); move(e); } });
+  const end = (e) => { if (e.pointerId !== id) return; id = null; input.axis = 0; knob.style.transform = ''; stick.classList.remove('on'); home(); };
+  zone.addEventListener('pointerup', end); zone.addEventListener('pointercancel', end);
+}
 
 // ---------- audio ----------
-let AC = null, engine = null, hiss = null, muted = false;
+// The Roadster is electric: no exhaust note. A motor/inverter whine that climbs with speed, tyre and wind roar,
+// and the hiss of the cold-gas thrusters.
+let AC = null, engine = null, hiss = null, road = null, muted = false, burst = 0;
 function initAudio() {
   if (AC) return;
   try {
     AC = new (window.AudioContext || window.webkitAudioContext)();
     const master = AC.createGain(); master.gain.value = 0.5; master.connect(AC.destination);
-    engine = { osc: AC.createOscillator(), osc2: AC.createOscillator(), gain: AC.createGain(), lp: AC.createBiquadFilter() };
-    engine.osc.type = 'sawtooth'; engine.osc2.type = 'square'; engine.lp.type = 'lowpass'; engine.lp.frequency.value = 900;
-    engine.gain.gain.value = 0.0;
-    engine.osc.connect(engine.lp); engine.osc2.connect(engine.lp); engine.lp.connect(engine.gain); engine.gain.connect(master);
-    engine.osc.start(); engine.osc2.start();
+    const osc = (type) => { const o = AC.createOscillator(); o.type = type; o.start(); return o; };
+    // motor: fundamental + inverter harmonic + a faint gear mesh, through a gentle low-pass
+    engine = { a: osc('sine'), b: osc('triangle'), c: osc('sine'), ga: AC.createGain(), gb: AC.createGain(), gc: AC.createGain(), gain: AC.createGain(), lp: AC.createBiquadFilter() };
+    engine.lp.type = 'lowpass'; engine.lp.frequency.value = 3800; engine.gain.gain.value = 0;
+    engine.ga.gain.value = 0.55; engine.gb.gain.value = 0.16; engine.gc.gain.value = 0.07;
+    for (const k of ['a', 'b', 'c']) { engine[k].connect(engine['g' + k]); engine['g' + k].connect(engine.lp); }
+    engine.lp.connect(engine.gain); engine.gain.connect(master);
     const buf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate); const ch = buf.getChannelData(0);
     for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
-    const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
-    const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1800;
-    hiss = AC.createGain(); hiss.gain.value = 0; src.connect(hp); hp.connect(hiss); hiss.connect(master); src.start();
+    const noise = () => { const src = AC.createBufferSource(); src.buffer = buf; src.loop = true; src.start(); return src; };
+    // cold gas
+    const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1400;
+    hiss = AC.createGain(); hiss.gain.value = 0; noise().connect(hp); hp.connect(hiss); hiss.connect(master);
+    // tyres + wind
+    const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 520; bp.Q.value = 0.7;
+    road = AC.createGain(); road.gain.value = 0; noise().connect(bp); bp.connect(road); road.connect(master); road.bp = bp;
     AC.master = master;
   } catch { AC = null; }
 }
+function hissBurst(dur) { burst = Math.max(burst, dur); }
 function blip(f0, f1, dur = 0.12, type = 'sine', vol = 0.18) {
   if (!AC || muted) return;
   const o = AC.createOscillator(), g = AC.createGain(); o.type = type;
@@ -672,13 +741,18 @@ function blip(f0, f1, dur = 0.12, type = 'sine', vol = 0.18) {
   g.gain.setValueAtTime(vol, AC.currentTime); g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + dur);
   o.connect(g); g.connect(AC.master); o.start(); o.stop(AC.currentTime + dur + 0.02);
 }
+let lastAudio = 0;
 function updateAudio() {
   if (!AC) return;
-  const t = AC.currentTime, on = state === 'race' && !muted;
-  engine.osc.frequency.setTargetAtTime(45 + P.v * 2.1, t, 0.05);
-  engine.osc2.frequency.setTargetAtTime(22 + P.v * 1.05, t, 0.05);
-  engine.gain.gain.setTargetAtTime(on ? 0.05 : 0, t, 0.1);
-  hiss.gain.setTargetAtTime(on && P.thrusting ? 0.12 : 0, t, 0.03);
+  const t = AC.currentTime, on = state === 'race' && !muted, dt = Math.min(0.1, t - lastAudio); lastAudio = t;
+  const f = 140 + P.v * 15 + (P.boostT > 0 ? 90 : 0);
+  engine.a.frequency.setTargetAtTime(f, t, 0.06); engine.b.frequency.setTargetAtTime(f * 2.02, t, 0.06); engine.c.frequency.setTargetAtTime(f * 3.13, t, 0.06);
+  const load = P.launchT > 0 || P.boostT > 0 ? 1 : input.brake ? 0.6 : 0.45;
+  engine.gain.gain.setTargetAtTime(on ? 0.035 + 0.035 * load : 0, t, 0.08);
+  road.gain.setTargetAtTime(on && P.grounded ? Math.min(0.09, 0.0045 + (P.v / 62) ** 2 * 0.08) : on ? 0.02 * P.v / 62 : 0, t, 0.1);
+  road.bp.frequency.setTargetAtTime(380 + P.v * 9, t, 0.2);
+  burst = Math.max(0, burst - dt);
+  hiss.gain.setTargetAtTime(on && (P.thrusting || burst > 0) ? (burst > 0 ? 0.16 : 0.12) : 0, t, 0.03);
 }
 document.getElementById('mute').addEventListener('click', () => { muted = !muted; document.getElementById('mute').textContent = muted ? '소리 끔' : '소리 켬'; });
 
@@ -834,14 +908,17 @@ function step(dt) {
   let vmax = 62 + save.level * 0.8 + save.up.motor * 4 + (boosting ? 20 : 0);
   let acc = (boosting ? 34 : 15) * Math.max(0, 1 - P.v / vmax) + (boosting ? 6 : 0);
   if (P.v > vmax) acc = -12;
+  // launch: the cold-gas thrusters fire with the motors, 0-100 km/h (as the HUD shows it) in about 1.1 s
+  if (P.launchT > 0) { P.launchT -= dt; acc = Math.max(acc, 23.5); }
+  if (!P.t100 && P.v * 3.6 * 1.1 >= 100) { P.t100 = raceT; if (raceT < 2) floatText(`0→100km/h ${raceT.toFixed(2)}초 · 콜드가스 스러스터`); }
   if (P.crashT > 0) { P.crashT -= dt; acc *= 0.3; }
   if (input.brake && P.grounded) acc = -42;
   P.v = Math.max(0, P.v + acc * dt);
   if (P.boostT > 0) P.boostT -= dt;
-  if (input.boost && !boosting && P.boostG >= 35) { P.boostT = P.boostG / 35 * 1.1; P.boostG = 0; blip(200, 900, 0.5, 'sawtooth', 0.08); toast('부스트!', '', '#ff3d6e'); }
+  if (input.boost && !boosting && P.boostG >= 35) { P.boostT = P.boostG / 35 * 1.1; P.boostG = 0; hissBurst(P.boostT); toast('부스트!', '', '#ff3d6e'); }
 
   // steering
-  const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  const steer = input.axis || (input.right ? 1 : 0) - (input.left ? 1 : 0); // analog stick on touch, keys otherwise
   const grip = P.slipT > 0 ? 0.25 : 1;
   P.d += steer * (P.grounded ? 15 : 14) * grip * dt * Math.min(1, 0.4 + P.v / 40);
   if (P.slipT > 0) { P.slipT -= dt; P.d += P.slipV * dt; P.slipV *= 1 - dt * 1.2; }
@@ -859,7 +936,7 @@ function step(dt) {
     if (P.charges > 0) {
       P.charges--; P.vy = P.grounded ? (elevSlope(P.s) + P.slope) * P.v + JUMP_V : Math.max(P.vy - elevSlope(P.s) * P.v, 0) + elevSlope(P.s) * P.v + JUMP_V; P.grounded = false; P.air = 0;
       // signature move from the Roadster demo: a full sideways twist in the air
-      P.rollDir = steer !== 0 ? steer : -P.rollDir; P.rollTo = P.roll + Math.PI * 2 * P.rollDir;
+      P.rollDir = Math.abs(steer) > 0.2 ? Math.sign(steer) : -P.rollDir; P.rollTo = P.roll + Math.PI * 2 * P.rollDir;
       blip(160, 520, 0.25, 'triangle', 0.15);
       const base = world(P.s, P.d, P.y);
       for (let i = 0; i < 14; i++) puff(base, new THREE.Vector3((Math.random() - 0.5) * 12, -1 + Math.random() * 2, (Math.random() - 0.5) * 12), '#e8f6ff', 1.2, 0.7);
@@ -1178,15 +1255,16 @@ function updateCamera(dt, time) {
   }
   const speedK = P.v / 70;
   // follow the car's height, but only part of the way up a jump (above where it last stood)
-  const lift = Math.max(0, P.y - (P.lastG || 0)), back = 8.5 + speedK * 2.5;
-  tmpV.copy(car.position).addScaledVector(fr.f, -back); tmpV.y = Math.max(elev(P.s), elev(P.s - back) - 1.5) + Math.max(P.y - lift * 0.3, 0) + 3.4 + speedK * 0.4;
-  lookV.copy(car.position).addScaledVector(fr.f, 10); lookV.y = elev(P.s + 10) + P.y - lift * 0.45 + 1.4;
+  // sits a little high and aims far down the road, so ramps, gaps and traffic read early
+  const lift = Math.max(0, P.y - (P.lastG || 0)), back = 8.8 + speedK * 2.4, ahead = 24 + speedK * 8;
+  tmpV.copy(car.position).addScaledVector(fr.f, -back); tmpV.y = Math.max(elev(P.s), elev(P.s - back) - 1.5) + Math.max(P.y - lift * 0.3, 0) + 3.9 + speedK * 0.5;
+  lookV.copy(car.position).addScaledVector(fr.f, ahead); lookV.y = elev(P.s + ahead) + P.y - lift * 0.45 + 1.1;
   const k = snapCam ? 1 : Math.min(1, dt * 7);
   camPos.lerp(tmpV, k); camLook.lerp(lookV, snapCam ? 1 : Math.min(1, dt * 10)); snapCam = false;
   camera.position.copy(camPos);
   if (P.shake > 0) camera.position.add(new THREE.Vector3((Math.random() - 0.5), (Math.random() - 0.5), 0).multiplyScalar(P.shake * 0.6));
   camera.lookAt(camLook);
-  const targetFov = 60 + speedK * 14 + (P.boostT > 0 ? 8 : 0);
+  const targetFov = 64 + speedK * 12 + (P.boostT > 0 || P.launchT > 0 ? 9 : 0);
   camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3); camera.updateProjectionMatrix();
 }
 
@@ -1267,7 +1345,7 @@ function loop(now) {
     countdown -= dt;
     const n = Math.ceil(countdown);
     hud.count.textContent = n > 0 ? n : 'GO!'; hud.count.hidden = countdown < -0.6;
-    if (countdown <= 0) { state = 'race'; hud.count.textContent = 'GO!'; blip(880, 880, 0.3, 'square', 0.1); radio(RADIO_SCRIPT[0][1]); radioFlags.add(RADIO_SCRIPT[0][0]); }
+    if (countdown <= 0) { state = 'race'; hud.count.textContent = 'GO!'; blip(880, 880, 0.3, 'square', 0.1); P.launchT = 1.15; hissBurst(1.2); radio(RADIO_SCRIPT[0][1]); radioFlags.add(RADIO_SCRIPT[0][0]); }
     else if (Math.ceil(countdown + dt) !== n) blip(440, 440, 0.15, 'square', 0.08);
   }
   if (state === 'race' && !hud.count.hidden && raceT > 0.8) hud.count.hidden = true;
@@ -1276,7 +1354,7 @@ function loop(now) {
   if (state !== 'loading') { placeCar(); syncTraffic(time); syncPickups(time); boss?.sync(time); }
   if (state === 'poster') posterStage(time);
   ST.tick?.(time, camera, { state, P, car });
-  updatePuffs(dt); updateRadio(dt);
+  updateColdGas(dt, time); updatePuffs(dt); updateRadio(dt);
   if (toastT > 0) toastT -= dt;
   if (!window.__game?.frozen) updateCamera(dt, time);
   sky.position.copy(camera.position);
@@ -1299,6 +1377,7 @@ async function boot() {
   const tav = document.querySelector('.tweet .av'); if (tav && FACES.elon) { tav.textContent = ''; tav.style.background = `url(${FACES.elon}) center / 150% no-repeat #333`; }
   buildWorld();
   await carReady; await trafficReady;
+  car.add(coldGas);
   try {
     boss = createBoss({ faces: FACES, scene, P, LANES, ROAD_HALF, world, frame, carGround, puff, toast, radio, floatText, blip, gainXP, $, camera, car, addTraffic, crash, traffic: () => traffic,
       addPuddle: (q) => PUDDLES.push(q), removePuddle: (q) => { const i = PUDDLES.indexOf(q); if (i >= 0) PUDDLES.splice(i, 1); },

@@ -78,13 +78,19 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
 .btn { position: absolute; pointer-events: auto; border-radius: 50%; display: none; place-items: center; font-family: var(--f-display); color: #fff; border: 2px solid rgba(255, 255, 255, .35); background: rgba(255, 255, 255, .08); touch-action: none; }
 .touch .btn { display: grid; }
 .btn.down { background: rgba(255, 255, 255, .25); transform: scale(.94); }
-.b-left { left: calc(18px + env(safe-area-inset-left, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); width: 76px; height: 76px; font-size: 24px; }
-.b-right { left: calc(104px + env(safe-area-inset-left, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); width: 76px; height: 76px; font-size: 24px; }
+/* analog steering: a floating stick wherever the left thumb lands (left half of the screen) */
+#stickZone { position: absolute; left: 0; bottom: 0; width: 50%; height: 62%; pointer-events: auto; touch-action: none; display: none; }
+.touch #stickZone { display: block; }
+#stick { position: absolute; left: calc(30px + env(safe-area-inset-left, 0px)); bottom: calc(26px + env(safe-area-inset-bottom, 0px)); width: 132px; height: 132px; margin: 0; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .28); background: radial-gradient(circle, rgba(56, 245, 255, .14), rgba(255, 255, 255, .04) 70%); box-shadow: inset 0 0 18px rgba(56, 245, 255, .18); opacity: .6; transition: opacity .15s; }
+#stick.on { opacity: 1; transition: none; }
+#stick::before, #stick::after { content: ''; position: absolute; top: 50%; width: 0; height: 0; margin-top: -7px; border: 7px solid transparent; opacity: .5; }
+#stick::before { left: 8px; border-right-color: #fff; } #stick::after { right: 8px; border-left-color: #fff; }
+#knob { position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; margin: -29px 0 0 -29px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #ffffff, #bfefff 45%, #38f5ff); box-shadow: 0 0 18px rgba(56, 245, 255, .7); }
 .b-jump { right: calc(20px + env(safe-area-inset-right, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); width: 104px; height: 104px; font-size: 22px; background: radial-gradient(circle, rgba(56, 245, 255, .35), rgba(56, 245, 255, .08)); border-color: var(--neon); box-shadow: 0 0 22px rgba(56, 245, 255, .5); }
 .b-jump span { display: block; font: 500 10px var(--f-body); opacity: .85; text-align: center; }
 .b-boost { right: calc(134px + env(safe-area-inset-right, 0px)); bottom: calc(28px + env(safe-area-inset-bottom, 0px)); width: 62px; height: 62px; font-size: 14px; border-color: rgba(255, 61, 110, .5); opacity: .55; }
 .b-boost.ready { opacity: 1; border-color: var(--hot); box-shadow: 0 0 16px rgba(255, 61, 110, .6); }
-.b-brake { left: calc(18px + env(safe-area-inset-left, 0px)); bottom: calc(104px + env(safe-area-inset-bottom, 0px)); width: 52px; height: 52px; font: 700 11px var(--f-body); }
+.b-brake { right: calc(208px + env(safe-area-inset-right, 0px)); bottom: calc(34px + env(safe-area-inset-bottom, 0px)); width: 52px; height: 52px; font: 700 11px var(--f-body); }
 
 /* poster */
 #poster::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 62% 38%, transparent 35%, rgba(6, 3, 14, .6) 100%); }
@@ -188,8 +194,7 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
   <div class="speed"><div><span id="kmh">0</span><small>km/h</small></div><div id="pips"></div><div id="jumpTxt"></div><div class="meters"><div class="meter" title="착지 분사"><i id="fuelFill"></i></div><div class="meter" title="부스트"><i id="boostFill"></i></div></div><div id="coilRow" hidden><div class="meters"><div class="meter coil" id="coilMeter" title="테슬라 코일"><i id="coilFill"></i></div></div><div id="coilTxt">⚡ 테슬라 코일 충전 중</div></div></div>
   <div id="bossBar" hidden><b id="bossName">웨이모 마더십</b><div class="hp"><div id="bossHp"></div></div></div>
   <div class="keys" id="keysHint">←→ 조향 · Space 점프(공중에서 꾹 = 착지 분사)<br>Shift 부스트 · ↓ 브레이크 · F 테슬라 코일(보스전)</div>
-  <div class="btn b-left" data-key="left">◀</div>
-  <div class="btn b-right" data-key="right">▶</div>
+  <div id="stickZone"><div id="stick"><div id="knob"></div></div></div>
   <div class="btn b-brake" data-key="brake">브레이크</div>
   <div class="btn b-boost" id="boostBtn" data-key="boost">부스트</div>
   <div class="btn b-fire" id="fireBtn" data-key="fire" hidden>⚡</div>
