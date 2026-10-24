@@ -1,97 +1,147 @@
 // Stage 4: the Metaverse. Starts on a real Menlo Park campus at dusk (glass offices, green roofs, the
 // giant thumbs-up sign), then a portal at the end of Hacker Way drops you into the virtual world: a neon
 // road floating over an endless grid, low-poly islands, glitch shards, legless avatars. The road breaks
-// in three places; blue like-button pads launch you across.
+// in places; blue like-button pads launch you across. Each event is its own floating course: only the
+// first one starts on the campus, the others spawn already logged in.
 import * as THREE from 'three';
 
 const ROAD_HALF = 12;
-const FINISH_S = 3250;
-const PORTAL = 660, EDGE = PORTAL + 22;   // the campus ground ends just past the portal
 const FLOOR_Y = -70;                        // absolute height of the virtual grid floor
+const LANES = [-9, -3, 3, 9];
 
-// ---------- road profile ----------
-// flat campus, then the floating road rolls up and over crests that throw you into the air
-const KEYS = [[-500, 0], [PORTAL, 0], [740, 12], [770, 12], [830, 2], [900, 2], [980, 16], [1005, 16], [1080, 4],
-  [1150, 20], [1310, 20], [1330, 18], [1400, 30], [1420, 30], [1500, 14], [1560, 14], [1640, 30], [1660, 30],
-  [1740, 16], [1975, 16], [2060, 28], [2080, 28], [2160, 10], [2520, 10], [2580, 22], [2720, 22], [2800, 8], [4400, 8]];
-const E0 = -500, EN = 4400;
-const ETAB = (() => {
-  const raw = new Float32Array(EN - E0 + 1);
-  for (let i = 0; i < raw.length; i++) {
-    const s = E0 + i; let k = 0; while (k < KEYS.length - 2 && KEYS[k + 1][0] < s) k++;
-    const [sa, ya] = KEYS[k], [sb, yb] = KEYS[k + 1];
-    raw[i] = ya + (yb - ya) * THREE.MathUtils.clamp((s - sa) / (sb - sa), 0, 1);
+// ---------- course factory ----------
+// a road profile as pieces laid end to end from s0: ['flat', len], ['crest', rise, newBase] (a ramp up,
+// a short top, a drop that throws you into the air), ['gap', len] (a break the pads launch you over)
+function profile(s0, y0, pieces) {
+  const keys = [[s0, y0]], gaps = [], lips = []; let s = s0, y = y0;
+  for (const [kind, a, b] of pieces) {
+    if (kind === 'flat') keys.push([s += a, y]);
+    else if (kind === 'gap') { gaps.push([s, s + a]); keys.push([s += a, y]); }
+    else { const top = y + a; keys.push([s += 75, top], [s += 22, top]); lips.push(s); y = b ?? y; keys.push([s += 75, y]); }
   }
-  const out = new Float32Array(raw.length), R = 5;
-  for (let i = 0; i < raw.length; i++) { let a = 0, n = 0; for (let j = -R; j <= R; j++) { const v = raw[i + j]; if (v !== undefined) { a += v; n++; } } out[i] = a / n; }
-  return out;
-})();
-function elev(s) {
-  const x = THREE.MathUtils.clamp(s - E0, 0, EN - E0 - 1), i = Math.floor(x), f = x - i;
-  return ETAB[i] * (1 - f) + ETAB[i + 1] * f;
+  return { keys, gaps, lips, end: s };
 }
 
-const GAPS = [[1240, 1310], [1900, 1970], [2640, 2710]].map(([s0, s1]) => ({ s0, s1, respawn: s0 - 130 }));
-const LANES = [-9, -3, 3, 9];
-const BOSS_PADS = [[2200, -9], [2200, 3], [2290, -3], [2290, 9], [2380, -9], [2380, 3], [2470, -3], [2470, 9]];
-// like-button pads: a row before every gap, a pair on campus, a staggered field under the boss
-const PADS = [
-  ...GAPS.flatMap((g) => LANES.map((d) => ({ s: g.s0 - 9, d, l: 1.7, w: 2.3, v: 28 }))),
-  { s: 300, d: -3, l: 1.7, w: 2.3, v: 17 }, { s: 300, d: 3, l: 1.7, w: 2.3, v: 17 },
-  ...BOSS_PADS.map(([s, d]) => ({ s, d, l: 1.7, w: 2.3, v: 20 })),
-];
+// everything that depends on the course shape, as stage fields an event spreads over the base
+function course({ portal = -80, finish, keys, gaps = [], lips = [], sway = [70, 260, 25, 120], bossPads = [], holos = [], plaza, extra = [] }) {
+  const edge = portal + 22, E0 = Math.min(-500, portal - 500), EN = finish + 1200;
+  const K = [...(keys[0][0] > E0 ? [[E0, keys[0][1]]] : []), ...keys, [EN, keys.at(-1)[1]]];
+  const raw = new Float32Array(EN - E0 + 1);
+  for (let i = 0, k = 0; i < raw.length; i++) {
+    const s = E0 + i; while (k < K.length - 2 && K[k + 1][0] < s) k++;
+    const [sa, ya] = K[k], [sb, yb] = K[k + 1];
+    raw[i] = sb > sa ? ya + (yb - ya) * THREE.MathUtils.clamp((s - sa) / (sb - sa), 0, 1) : yb;
+  }
+  const tab = new Float32Array(raw.length), R = 5;
+  for (let i = 0; i < raw.length; i++) { let a = 0, n = 0; for (let j = -R; j <= R; j++) { const v = raw[i + j]; if (v !== undefined) { a += v; n++; } } tab[i] = a / n; }
+  const elev = (s) => { const x = THREE.MathUtils.clamp(s - E0, 0, EN - E0 - 1), i = Math.floor(x), f = x - i; return tab[i] * (1 - f) + tab[i + 1] * f; };
+  const G = gaps.map(([s0, s1]) => ({ s0, s1, respawn: s0 - 130 }));
+  const c0 = Math.max(portal, 0) + 40, [a1, w1, a2, w2] = sway;
+  const v0 = Math.max(portal, 0) + 60;
+  return {
+    finish, gaps: G, elev,
+    cx: (s) => THREE.MathUtils.smoothstep(s, c0, c0 + 250) * (1 - THREE.MathUtils.smoothstep(s, finish - 300, finish - 100)) * (a1 * Math.sin((s - c0) / w1) + a2 * Math.sin((s - c0) / w2)),
+    // like-button pads: a row before every gap, a pair on campus, a staggered field under the boss
+    pads: [
+      ...G.flatMap((g) => LANES.map((d) => ({ s: g.s0 - 9, d, l: 1.7, w: 2.3, v: 28 }))),
+      ...(portal > 300 ? [{ s: 300, d: -3, l: 1.7, w: 2.3, v: 17 }, { s: 300, d: 3, l: 1.7, w: 2.3, v: 17 }] : []),
+      ...bossPads.map(([s, d]) => ({ s, d, l: 1.7, w: 2.3, v: 20 })),
+    ],
+    splashY: (s) => (s > edge ? -16 : -5.5),
+    // coin arcs over every crest flight, then the event's own pickups
+    pickups: [
+      ...lips.flatMap((s0, i) => range(4, 46, 7).map((x) => ['coin', s0 + x, LANES[(i + 1) % 4], 1.2 + 0.22 * x - 15 * (x / 60) ** 2])),
+      ...(portal > 300 ? range(320, portal - 40, 12).map((s) => ['coin', s, 9, 1.2]) : []),
+      ...bossPads.map(([s, d]) => ['gpu', s + 30, d, 6]),
+      ...extra,
+    ],
+    trafficMaxS: finish + 200,
+    traffic: {
+      avatar: { make: makeAvatar, name: '다리 없는 아바타', speed: [6, 9], n: 16, range: [v0, finish - 50] },
+      ...(portal > 300 ? {
+        model3: { car: 'model3', name: '모델 3', speed: [24, 30], n: 3, range: [60, portal - 60] },
+        modely: { car: 'modely', name: '모델 Y', speed: [24, 30], n: 2, range: [60, portal - 60] },
+        ioniq5: { car: 'ioniq5', name: '사내 셔틀', speed: [18, 22], n: 2, range: [60, portal - 60], color: '#f2f2f0' },
+      } : {}),
+    },
+    mv: { portal, bossPads, holos, plaza },
+  };
+}
+
+// event 1: the campus, the portal, then a gentle errand course with one break
+const LOGIN = (() => {
+  const p = profile(660, 0, [['crest', 8, 2], ['flat', 260], ['crest', 12, 4], ['crest', 14, 6], ['flat', 300], ['crest', 14, 10], ['flat', 150], ['gap', 60],
+    ['flat', 200], ['crest', 16, 8], ['crest', 12, 8], ['flat', 320], ['crest', 14, 6], ['flat', 600]]);
+  return course({ portal: 660, finish: 3420, keys: [[-500, 0], ...p.keys], gaps: p.gaps, lips: p.lips,
+    extra: [['h100', 1500, -9, 1.6], ['air', 1990, 3, 1.2], ['h100', 2600, 9, 1.6]],
+    holos: [['좋아요 10억 개', '#5ff0ff', '그런데 누가 누른 거지?', 820, -38], ['아바타 의상실', '#ff6ad5', '바지 팝니다 · 다리는 별매', 1000, 40], ['가상 회의실', '#5ff0ff', '참석자 0명 · 전원 카메라 꺼짐', 1600, -40],
+      ['가상 부동산', '#ffd04a', '1평 = 실제 아파트 1채', 2250, 42], ['호라이즌 콘서트', '#ff6ad5', '관객 2명 · 가수도 아바타', 2850, -40]],
+    plaza: ['호라이즌 콘서트장', '오늘의 관객: 당신 포함 3명'] });
+})();
+// event 2: a lagging server: big crests and four breaks, made for flips
+const LAG = (() => {
+  const p = profile(-80, 6, [['flat', 260], ['crest', 18, 6], ['flat', 80], ['gap', 70], ['flat', 120], ['crest', 20, 8], ['crest', 16, 8], ['flat', 100], ['gap', 70],
+    ['flat', 140], ['crest', 22, 10], ['flat', 60], ['crest', 18, 10], ['flat', 120], ['gap', 70], ['flat', 120], ['crest', 24, 12], ['crest', 20, 12],
+    ['flat', 100], ['gap', 70], ['flat', 140], ['crest', 18, 8], ['flat', 500]]);
+  return course({ finish: 3050, keys: p.keys, gaps: p.gaps, lips: p.lips, sway: [55, 300, 20, 140],
+    extra: [['air', 300, -3, 1.2], ['h100', 1300, 9, 1.6], ['air', 1700, 3, 1.2], ['h100', 2400, -9, 1.6]],
+    holos: [['핑 999ms', '#ff6ad5', '서버가 아파요', 260, -40], ['3 FPS', '#5ff0ff', '이것이 차세대 경험', 900, 40], ['렌더링 중…', '#ffd04a', '다리 로딩 실패 (47번째)', 1500, -42],
+      ['재접속 중', '#5ff0ff', '잠시만 기다려 주세요 · 영원히', 2100, 40], ['서버 비용 400억', '#ffd04a', '접속자 1인당 133억', 2700, -40]],
+    plaza: ['서버 복구 완료', '다음 점검: 5분 뒤'] });
+})();
+// event 3: the Horizon Grand Prix: no breaks (avatars can't jump), long sweeping bends and rollers
+const HORIZON = (() => {
+  const p = profile(-80, 4, [['flat', 300], ['crest', 10, 4], ['flat', 200], ['crest', 12, 8], ['flat', 150], ['crest', 10, 14], ['flat', 250], ['crest', 14, 6],
+    ['flat', 200], ['crest', 10, 10], ['flat', 300], ['crest', 12, 4], ['flat', 900]]);
+  return course({ finish: 3150, keys: p.keys, lips: p.lips, sway: [110, 240, 40, 110],
+    extra: [['air', 700, -9, 1.2], ['h100', 1600, 3, 1.6], ['air', 2300, 9, 1.2]],
+    holos: [['호라이즌 그랑프리', '#ffd04a', '참가자 4명 · 관객 0명', 300, 40], ['스폰서: 메가 퀘스트', '#5ff0ff', '멀미약 별도 판매', 1100, -40],
+      ['실시간 시청자', '#ff6ad5', '2명 (둘 다 저크 엄마)', 1900, 42], ['결승선 →', '#5ff0ff', '아직 렌더링 안 됨', 2600, -40]],
+    plaza: ['호라이즌 그랑프리', '시상대도 다리 없음'] });
+})();
+// event 4: the original floating road with the headset boss, spawning already inside
+const BOSS = (() => {
+  const D = -740;   // the old course minus the campus
+  const keys = [[-80, 0], [740, 12], [770, 12], [830, 2], [900, 2], [980, 16], [1005, 16], [1080, 4], [1150, 20], [1310, 20], [1330, 18], [1400, 30], [1420, 30],
+    [1500, 14], [1560, 14], [1640, 30], [1660, 30], [1740, 16], [1975, 16], [2060, 28], [2080, 28], [2160, 10], [2520, 10], [2580, 22], [2720, 22], [2800, 8]].map(([s, y], i) => [i ? s + D : s, y]);
+  return course({ finish: 3250 + D, keys, gaps: [[1240, 1310], [1900, 1970], [2640, 2710]].map(([a, b]) => [a + D, b + D]),
+    lips: [770, 1005, 1420, 1660, 2080].map((s) => s + D),
+    bossPads: [[2200, -9], [2200, 3], [2290, -3], [2290, 9], [2380, -9], [2380, 3], [2470, -3], [2470, 9]].map(([s, d]) => [s + D, d]),
+    extra: [['h100', 1600 + D, -9, 1.6], ['h100', 2325 + D, 9, 6], ['h100', 2930 + D, 3, 1.6], ['air', 1180 + D, 3, 1.2], ['air', 1840 + D, -3, 1.2], ['air', 2580 + D, 9, 1.2]],
+    holos: [['좋아요 10억 개', '#5ff0ff', '그런데 누가 누른 거지?', 820 + D, -38], ['다리 업데이트', '#ff6ad5', '2027년 출시 예정 · 아마도', 1120 + D, 40], ['토지 분양 중', '#ffd04a', '가상 부동산 1평 = 실제 아파트 1채', 1480 + D, -42],
+      ['회의실 입장', '#5ff0ff', '참석자: 아바타 0명', 1820 + D, 38], ['실시간 접속자', '#ff6ad5', '전 세계 3명 (봇 2명 포함)', 2240 + D, -40], ['400억 달러', '#ffd04a', '여기 다 썼음', 2760 + D, 44]],
+    plaza: ['현재 접속자 3명', '호라이즌 광장에 오신 것을 환영합니다'] });
+})();
+const VR_POSTER = { s: 120, d: -6, y: 0, cam: { back: 10, side: 3, y: 2.6, ahead: 8, lookSide: -3, lookY: 3, fov: 50 } };
+const NOBOSS = { boss: null, legend: null };
 
 export default {
   id: 'metaverse', num: 4, name: '메타버스',
-  roadHalf: ROAD_HALF, lanes: LANES, finish: FINISH_S,
-  gaps: GAPS,
-  elev,
-  cx(s) {
-    const on = THREE.MathUtils.smoothstep(s, 700, 950) * (1 - THREE.MathUtils.smoothstep(s, 2950, 3150));
-    return on * (70 * Math.sin((s - 700) / 260) + 25 * Math.sin((s - 700) / 120));
-  },
+  roadHalf: ROAD_HALF, lanes: LANES,
+  ...BOSS,
   ramps: [],
-  pads: PADS,
-  splashY: (s) => (s > EDGE ? -16 : -5.5),
   respawnBack: 120,
-  legend: { s: 1944, d: -3, y: 12 },   // the peak of a pad flight over the second gap, lane -3
-  pickups: [
-    // coin arcs over the crest flights
-    ...[770, 1005, 1420, 1660, 2080].flatMap((s0) => range(4, 46, 7).map((x) => ['coin', s0 + x, -3, 1.2 + 0.22 * x - 15 * (x / 60) ** 2])),
-    ...range(320, 620, 12).map((s) => ['coin', s, 9, 1.2]),
-    ['h100', 1600, -9, 1.6], ['h100', 2325, 9, 6], ['h100', 2930, 3, 1.6],
-    ['air', 560, -9, 1.2], ['air', 1180, 3, 1.2], ['air', 1840, -3, 1.2], ['air', 2580, 9, 1.2],
-    ...BOSS_PADS.map(([s, d]) => ['gpu', s + 30, d, 6]),
-  ],
-  trafficMaxS: FINISH_S + 200,
+  legend: { s: 1944 - 740, d: -3, y: 12 },   // the peak of a pad flight over the second gap, lane -3
   road: { yellow: false, dashes: [0.25, 0.5, 0.75] },
   env: {
     bg: false, sun: ['#ffc4a0', 2.1], hemi: ['#b9a8e8', '#3a2a40', 0.7], sunDir: [-0.35, 0.16, -1],
     sky: { top: [0.1, 0.12, 0.3], mid: [0.3, 0.28, 0.55], hor: [0.95, 0.55, 0.45], low: [0.25, 0.18, 0.25], glow: [1, 0.6, 0.35] },
     fog: ['#8a6f95', 220, 1700], hdri: 'assets/night_city_rgbe_gray.png', exposure: 0.85, bloom: 0.42, hdrMax: 6,
   },
-  traffic: {
-    avatar: { make: makeAvatar, name: '다리 없는 아바타', speed: [6, 9], n: 16, range: [720, 3200] },
-    model3: { car: 'model3', name: '모델 3', speed: [24, 30], n: 3, range: [60, 600] },
-    modely: { car: 'modely', name: '모델 Y', speed: [24, 30], n: 2, range: [60, 600] },
-    ioniq5: { car: 'ioniq5', name: '사내 셔틀', speed: [18, 22], n: 2, range: [60, 600], color: '#f2f2f0' },
-  },
   boss: 'headset',
+  bossOpts: { appearAt: 80, giveUpAt: 3100 - 740 },
   heads: ['zuck'],
   props: ['vrheadset'],
   radio: [
-    [20, '멘로파크야. 리자드 저크 본사. 직원들 표정이 다 똑같지? 다 아바타라서 그래.'],
-    [230, '도로 위 파란 좋아요 버튼 밟아봐. 점프대야. 밟으면 날아가.'],
-    [520, '저 앞에 포털! 들어가면 메타버스야. 다리 없는 아바타들 조심해.'],
-    [690, '400억 달러짜리 가상세계래. 아래로 떨어지면 로그아웃이야.'],
-    [1170, '길이 끊겼어! 좋아요 패드 밟고 날아서 건너!'],
-    [1830, '또 끊긴다. 패드 놓쳤으면 점프 꾹!'],
-    [2570, '마지막 끊긴 구간이야. 넘으면 호라이즌 광장이 보여.'],
-    [3040, '접속자 3명짜리 광장 도착. 결승선까지 밟아!'],
+    [20, '로그인 완료. 400억 달러짜리 가상세계야. 아래로 떨어지면 로그아웃이야.'],
+    [440, '길이 끊겼어! 좋아요 패드 밟고 날아서 건너!'],
+    [1090, '또 끊긴다. 패드 놓쳤으면 점프 꾹!'],
+    [1830, '마지막 끊긴 구간이야. 넘으면 호라이즌 광장이 보여.'],
+    [2300, '접속자 3명짜리 광장 도착. 결승선까지 밟아!'],
   ],
   lines: { finish: '메타버스 탈출! 다음은 워싱턴 DC야. 아이스크림 트럭이 기다린대.', fall: ['로그아웃!', '메타버스 밖으로 추락 · +3초', '떨어지면 재접속이야. 다시 가자!'] },
-  stars: { time: 62, text: '완주 · 메가 헤드셋 격추 · 62초 이내 또는 퍼펙트 랜딩 5회', perfect: 5 },
-  poster: { s: 674, d: 4, y: 5, boss: [-3, -9, 12, 2.85], cam: { back: -12, side: -4, y: 4, ahead: -30, lookSide: -2, lookY: 10, fov: 64 } },
+  stars: { time: 50, text: '완주 · 메가 헤드셋 격추 · 50초 이내 또는 퍼펙트 랜딩 5회', perfect: 5 },
+  poster: { s: 70, d: 4, y: 5, boss: [-3, -9, 12, 2.85], cam: { back: -12, side: -4, y: 4, ahead: -30, lookSide: -2, lookY: 10, fov: 64 } },
   text: {
     eyebrow: 'STAGE 04 · THE METAVERSE', title: 'METAVERSE', sub: '다리 없는 세계로 로그인',
     tip: '<b>TIP</b> 파란 <b>좋아요 패드</b>를 밟으면 차가 튀어 올라요. 끊긴 도로 앞엔 꼭 패드가 있으니 차선을 맞추세요. 하얀 <b>선크림</b> 차선은 미끄러워요.',
@@ -99,6 +149,54 @@ export default {
     meta: '오후 11:12 · 멘로파크 · 리트윗 89만', load: '아바타 다리 렌더링 포기하는 중 · 포털 여는 중',
     hud: 'STAGE 4 · METAVERSE', clear: 'STAGE 04 CLEAR', clearTitle: '로그아웃 성공',
   },
+  // chapter 4: three errands on their own floating courses, then the original road with the boss
+  events: [
+    {
+      id: 'login', name: '첫 로그인 배송', ...LOGIN, ...NOBOSS,
+      brief: '<b>배송</b> 멘로파크 캠퍼스에서 포털을 지나 메타버스로. 아바타 손님 넷을 가상 의상실, 회의실, 부동산, 콘서트장에 내려 줘요. 초록 정차 구역에서 <b>↓ 브레이크</b>. 끊긴 도로는 파란 패드로 건너요.',
+      mission: { type: 'deliver', time: 120, allowMiss: 1, stops: [
+        { s: 960, d: 9, name: '아바타 의상실', thanks: '바지 샀어요! 입을 다리는 없지만', line: '첫 손님 내렸어. 바지 샀대. 다리가 없는데.' },
+        { s: 1590, d: -9, name: '가상 회의실', thanks: '회의 3분 늦었는데 아무도 없네요' },
+        { s: 2240, d: 9, name: '가상 부동산', thanks: '가상 땅 계약하러 왔어요', line: '가상 땅 1평에 아파트 한 채 값이래. 등기는 블록체인에.' },
+        { s: 2860, d: -9, name: '호라이즌 콘서트장', thanks: '앞자리예요! 관객이 둘뿐이라' },
+      ] },
+      radio: [[20, '멘로파크야. 리자드 저크 본사. 직원들 표정이 다 똑같지? 다 아바타라서 그래.'], [230, '도로 위 파란 좋아요 버튼 밟아봐. 점프대야.'], [520, '저 앞에 포털! 들어가면 메타버스야. 오늘은 아바타 택시 알바야.'],
+        [1900, '앞에 길 끊겼어! 패드 밟고 날아. 착지하면 바로 손님이니까 브레이크 준비.']],
+      lines: { finish: '배송 끝. 아바타 팁은 가상화폐래. 환전은 안 된대.', failed: '아바타 손님들이 별점 1개 줬어. 다리가 없어서 걸어가기 싫대. 다시 가자.' },
+      poster: { s: 674, d: 4, y: 5, cam: { back: -12, side: -4, y: 4, ahead: -30, lookSide: -2, lookY: 10, fov: 64 } },
+      finishText: 'FINISH · 호라이즌 콘서트장',
+      text: { clear: 'DELIVERY DONE', clearTitle: '배송 완료' },
+    },
+    {
+      id: 'lag', name: '서버 렉 스턴트', ...LAG, ...NOBOSS,
+      brief: '<b>스턴트</b> 서버가 렉 걸려서 도로가 네 번 끊기고 언덕이 솟았어요. 높이 날아 배럴롤, 퍼펙트 착지, 아슬 추월을 이어 <b>콤보 배수</b>를 키워요. 끊긴 곳 앞엔 좋아요 패드.',
+      mission: { type: 'stunt', scores: [5000, 11000, 20000] },
+      radio: [[20, '서버 렉이 심해. 도로가 막 솟고 끊겨. 이참에 묘기 쇼 하자.'], [360, '끊겼다! 패드 밟고 날면서 롤 한 바퀴!'], [1500, '렉 덕분에 언덕이 더 높아졌어. 높을수록 점수 커.']],
+      lines: { finish: '서버 복구됐대. 우리 묘기 영상이 메타버스 역대 최고 조회수래. 3회.', failed: '렉보다 점수가 느렸어. 콤보 끊지 말고 이어 봐.', fall: ['연결 끊김!', '패킷 손실 · +3초', '재접속 중… 다시 가자!'] },
+      poster: VR_POSTER,
+      finishText: 'FINISH · 서버 복구 완료',
+      text: { clear: 'SHOW TIME', clearTitle: '스턴트 쇼 성공' },
+    },
+    {
+      id: 'horizon', name: '호라이즌 그랑프리', ...HORIZON, ...NOBOSS,
+      brief: '<b>레이스</b> 메타버스 공식 그랑프리. 상대는 다리 없는 아바타 레이서 셋. 호버링이라 언덕에서도 안 뜨니까, 우리는 퍼펙트 착지 부스트로 따라잡아요. 깜빡이 반대쪽으로 추월.',
+      mission: { type: 'rivals', time: 58, perfect: 2, rivals: [
+        { type: 'avatar', name: '아바타 레이서 Lv.99', label: 'LV.99', speed: 53.5, d: -3, s: 24, color: '#e0504a' },
+        { type: 'avatar', name: '저크봇 3호', label: 'ZUCKBOT', speed: 55.5, d: 9, s: 30, color: '#4a7bd8' },
+        { type: 'avatar', name: '다리 업데이트 베타 테스터', label: 'BETA LEGS', speed: 57.5, d: -9, s: 36, color: '#f2b632', tagColor: '#ffc83d' },
+      ] },
+      radio: [[20, '호라이즌 그랑프리야. 아바타들이 호버링으로 달려. 다리가 없으니 페달도 없지.'], [1500, '굽은 길 많아. 언덕 넘을 땐 퍼펙트 착지로 부스트 챙겨.']],
+      lines: { finish: '우승! 트로피도 가상이래. 근데 NFT래. 이제 진짜 보스 잡으러 가자.', failed: '다리도 없는 애들한테 졌어… 퍼펙트 착지 부스트로 붙어.' },
+      poster: VR_POSTER,
+      finishText: 'FINISH · 호라이즌 그랑프리',
+      text: { clear: 'WINNER', clearTitle: '그랑프리 우승' },
+    },
+    {
+      id: 'boss', name: '메가 헤드셋 추격',
+      brief: '<b>보스전</b> 버스만 한 메가 헤드셋이 쫓아와요. 끊긴 도로를 패드로 넘고, 보스 아래 패드 밭에서 튀어 올라 <b>점프 공격</b>, F(⚡) 코일로 격추해요.',
+      mission: { type: 'boss', time: 54, perfect: 5 },
+    },
+  ],
   build,
   tick,
 };
@@ -111,13 +209,21 @@ const glow = (r, g, b) => new THREE.MeshBasicMaterial({ color: new THREE.Color(r
 // things tick() animates
 const live = { k: null, portal: null, vsky: null, floor: null, shards: null, holos: [], pads: null, lights: null, fogA: new THREE.Color('#8a6f95'), fogB: new THREE.Color('#1c0d38'), roadGrid: null, voxels: null };
 
+// the course being built (set from the event's fields in build)
+let FINISH_S, PORTAL, EDGE, GAPS, PADS, ELEV, MV;
+function elev(s) { return ELEV(s); }
+
 function build(k) {
   live.k = k;
+  ({ finish: FINISH_S, gaps: GAPS, pads: PADS, elev: ELEV, mv: MV } = k.ST);
+  PORTAL = MV.portal; EDGE = PORTAL + 22;
   const rand = rnd(4);
-  buildCampus(k, rand);
-  buildLikeSign(k);
+  if (PORTAL > 300) {
+    buildCampus(k, rand);
+    buildLikeSign(k);
+    buildVoxelEdge(k, rand);
+  }
   buildPortal(k);
-  buildVoxelEdge(k, rand);
   buildVirtualRoad(k);
   buildPads(k);
   buildFloor(k);
@@ -126,7 +232,7 @@ function build(k) {
   buildShards(k, rand);
   buildHolos(k);
   buildPlaza(k);
-  k.finishArch('FINISH · 호라이즌 광장');
+  k.finishArch(k.ST.finishText || 'FINISH · 호라이즌 광장');
 }
 
 // ---------- campus (real world) ----------
@@ -331,11 +437,12 @@ function buildVirtualRoad(k) {
   live.roadGrid = deck;
   const under = new THREE.MeshStandardMaterial({ color: '#0c0a16', metalness: 0.7, roughness: 0.35, side: THREE.DoubleSide });
   const rail = glow(0.4, 2.4, 3.2), rail2 = glow(2.6, 0.4, 2.4);
-  const segs = []; let a = PORTAL + 1;
+  // logged-in events have no campus: the deck runs from behind the start
+  const vr = PORTAL < 300, segs = []; let a = vr ? -300 : PORTAL + 1;
   for (const g of [...GAPS, { s0: FINISH_S + 260, s1: 0 }]) { segs.push([a, g.s0]); a = g.s1; }
   for (const [s0, s1] of segs) {
     scene.add(new THREE.Mesh(k.ribbon(s0, s1, -ROAD_HALF, ROAD_HALF, 3, () => 0.02, 24), deck));
-    if (s0 < EDGE) continue; // still on the campus ground (only the deck overlay)
+    if (!vr && s0 < EDGE) continue; // still on the campus ground (only the deck overlay)
     const u = new THREE.Mesh(k.ribbon(s0, s1, -ROAD_HALF - 0.6, ROAD_HALF + 0.6, 4, () => -1.6), under); scene.add(u);
     for (const side of [-1, 1]) {
       scene.add(new THREE.Mesh(k.wall(s0, s1, side * (ROAD_HALF + 0.6), 4, () => -1.6, () => 0.1), under));
@@ -488,12 +595,7 @@ function holoPanel(k, text, color, w, h, s, d, y, sub) {
   return m;
 }
 function buildHolos(k) {
-  holoPanel(k, '좋아요 10억 개', '#5ff0ff', 26, 9, 820, -38, 24, '그런데 누가 누른 거지?');
-  holoPanel(k, '다리 업데이트', '#ff6ad5', 24, 9, 1120, 40, 30, '2027년 출시 예정 · 아마도');
-  holoPanel(k, '토지 분양 중', '#ffd04a', 24, 9, 1480, -42, 38, '가상 부동산 1평 = 실제 아파트 1채');
-  holoPanel(k, '회의실 입장', '#5ff0ff', 22, 8, 1820, 38, 30, '참석자: 아바타 0명');
-  holoPanel(k, '실시간 접속자', '#ff6ad5', 24, 9, 2240, -40, 34, '전 세계 3명 (봇 2명 포함)');
-  holoPanel(k, '400억 달러', '#ffd04a', 28, 10, 2760, 44, 34, '여기 다 썼음');
+  for (const [text, color, sub, s, d] of MV.holos) holoPanel(k, text, color, 25, 9, s, d, 28 + (Math.abs(d) % 5) * 2, sub);
 }
 
 // the finish plaza: a floating round deck with a giant "users online" counter
@@ -502,7 +604,7 @@ function buildPlaza(k) {
   const deck = new THREE.Mesh(new THREE.CylinderGeometry(60, 52, 3, 64, 1), new THREE.MeshStandardMaterial({ color: '#141026', metalness: 0.7, roughness: 0.3 }));
   k.world(s, 0, -1.65, deck.position); deck.receiveShadow = true; k.scene.add(deck);
   const rim = new THREE.Mesh(new THREE.TorusGeometry(60, 0.35, 8, 128), glow(0.5, 2.4, 3.2)); rim.rotation.x = Math.PI / 2; k.world(s, 0, -0.2, rim.position); k.scene.add(rim);
-  holoPanel(k, '현재 접속자 3명', '#5ff0ff', 36, 12, FINISH_S + 60, 0, 16, '호라이즌 광장에 오신 것을 환영합니다');
+  holoPanel(k, MV.plaza[0], '#5ff0ff', 36, 12, FINISH_S + 60, 0, 16, MV.plaza[1]);
 }
 
 // ---------- a legless avatar (procedural traffic) ----------

@@ -9,6 +9,8 @@ const CITIES = {
   la: { name: 'Los Angeles, CA (downtown, Arts District, 110/101 interchange)', bbox: [34.035, -118.275, 34.065, -118.225] },
   sf: { name: 'San Francisco, CA (Financial District, North Beach, Lombard St, Embarcadero)', bbox: [37.775, -122.43, 37.81, -122.39] },
   dc: { name: 'Washington, DC (National Mall, White House, Capitol Hill)', bbox: [38.88, -77.05, 38.905, -77.0] },
+  brownsville: { name: 'Brownsville, TX (downtown, the border bridges, Hwy 4 start)', bbox: [25.89, -97.52, 25.925, -97.47] },
+  padre: { name: 'Port Isabel and South Padre Island, TX (Queen Isabella Causeway, Padre Blvd)', bbox: [26.06, -97.225, 26.12, -97.155] },
 };
 const MIRRORS = [
   'https://overpass-api.de/api/interpreter',

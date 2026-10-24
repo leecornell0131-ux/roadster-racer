@@ -3,6 +3,8 @@
 // fire across the road, to the launch site: tank farm, the tower with its chopsticks, the full stack.
 // No boss: the finish is the launch. The roadster is lifted into the ship and the stack lifts off.
 import * as THREE from 'three';
+import { bigTurns, rampRun, CITY_ROAD } from './city.js';
+import { cityPolys } from '../osm.js';
 
 const ROAD_HALF = 12;
 const FINISH_S = 3050;
@@ -36,6 +38,16 @@ const HAZARDS = [
   { s: 1980, l: 4.5, dL: -ROAD_HALF, dR: 1, h: 3.2, side: -1, period: 3.6, on: 1.5, ph: 1.8, text: ['랩터 엔진 화염!', '시험 중인 차선 · 급감속', '#ff6a1a'] },
   { s: 2560, l: 4.5, dL: -1, dR: ROAD_HALF, h: 3.2, side: 1, period: 3.2, on: 1.4, ph: 0.6, text: ['랩터 엔진 화염!', '시험 중인 차선 · 급감속', '#ff6a1a'] },
 ];
+
+// real-map events (Brownsville, South Padre Island): the stage's own Highway 4 scenery is off there
+const STREET_TRAFFIC = {
+  model3: { car: 'model3', name: '모델 3', speed: [26, 32], n: 4 },
+  cybertruck: { car: 'cybertruck', name: '사이버트럭', speed: [24, 29], n: 5 },
+  modely: { car: 'modely', name: '모델 Y', speed: [26, 31], n: 3 },
+  raptor: { make: makeRaptorHauler, name: '랩터 엔진 운반차', speed: [12, 15], n: 2, lanes: [-3, 3], range: [200, 9000], color: '#f2f2f0' },
+};
+const ON_STREETS = { elev: null, gaps: [], hazards: [], legend: null, pickups: [], jams: [], trafficMaxS: 9000, finishDelay: 900, traffic: STREET_TRAFFIC };
+const CITY_POSTER = { s: 300, d: -6, y: 0, cam: { back: 10, side: 3, y: 2.6, ahead: 8, lookSide: -3, lookY: 1.4, fov: 46 } };
 
 export default {
   id: 'starbase', num: 6, name: '스타베이스',
@@ -93,6 +105,65 @@ export default {
     meta: '오후 12:00 · 스타베이스, 텍사스 · 리트윗 300만', load: '메카질라 젓가락 보정 중 · 랩터 엔진 예열 중',
     hud: 'STAGE 6 · STARBASE', clear: 'STAGE 06 CLEAR', clearTitle: '발사 성공',
   },
+  eggs: [
+    { id: 'sb_texas', ev: 'parts', place: 'Welcome to Texas Sign', y: 1.4, name: '웰컴 투 텍사스 표지판 조각', line: '국경 다리 앞 텍사스 환영 표지판 조각. 화성에도 하나 세우자.' },
+    { id: 'sb_ferry', ev: 'border', place: 'Brownsville-Matamoros Ferries and River Boardwalk', y: 1.4, name: '옛 국경 나룻배 표', line: '100년 전 국경 나룻배 표야. 요금 5센트. 스타쉽 표는 좀 더 비싸.' },
+    { id: 'sb_tesla', ev: 'causeway', place: 'Tesla Supercharger', y: 1.4, name: '사우스파드레 슈퍼차저 케이블', line: '섬 끝 슈퍼차저 케이블이야. 로켓은 이걸로 충전 안 돼.' },
+  ],
+  // chapter 6: errands in real Brownsville and a race over the real Queen Isabella Causeway, then Highway 4 to the launch
+  events: [
+    {
+      id: 'parts', name: '브라운스빌 부품 배송', city: 'brownsville', ...CITY_ROAD, ...ON_STREETS,
+      brief: '<b>배송</b> 진짜 브라운스빌 다운타운 지도예요. 스타베이스로 가는 부품을 받으러 포트 브라운에서 출발해 스틸먼 하우스, 퍼블릭 마켓, 시청, 옛 철도역을 거쳐 어린이 박물관까지. 초록 정차 구역에서 <b>↓ 브레이크</b>.',
+      route: { from: 'Fort Brown', via: ['Stillman House Museum', 'Public Market and Town Hall', 'Brownsville City Hall', 'Southern Pacific Railroad Passenger Depot'], to: 'Children’s Museum of Brownsville' },
+      forks: (L, R) => bigTurns(R, 1).map((t) => ({ at: t.s, name: '정상 경로' })),
+      ramps: (L) => rampRun(380, L - 200, 300, 2),
+      mission: { type: 'deliver', time: 110, allowMiss: 1, stops: [
+        { place: 'Stillman House Museum', name: '스틸먼 하우스', thanks: '브라운스빌을 세운 집이에요. 볼트 받아 가세요', line: '스틸먼 씨가 이 도시를 세웠대. 지금은 일론이 옆 동네를 통째로 세우는 중이고.' },
+        { place: 'Public Market and Town Hall', name: '퍼블릭 마켓', thanks: '타코 서른 개 스타베이스로 배달이요' },
+        { place: 'Brownsville City Hall', name: '브라운스빌 시청', thanks: '스타베이스 시 승인 서류예요. 도장 세 개 찍었어요', line: '시청 직원 내렸다. 옆 동네가 아예 시가 됐대. 시장 이름은 비밀.' },
+        { place: 'Southern Pacific Railroad Passenger Depot', name: '옛 철도역', thanks: '기차는 끊겼지만 로켓은 떠요' },
+      ] },
+      radio: [[20, '브라운스빌이야. 진짜 지도. 스타베이스 가기 전에 부품이랑 타코 챙겨야 해.'], [1400, '여기 국경 바로 앞이야. 강 건너가 멕시코 마타모로스.']],
+      lines: { finish: '부품 다 챙겼어. 타코도. 이제 섬으로 가자.', failed: '부품을 다 못 받았어… 스타베이스 일정이 또 밀린대. 다시 가자.' },
+      poster: CITY_POSTER, finishText: 'FINISH · 어린이 박물관',
+      text: { clear: 'DELIVERY DONE', clearTitle: '부품 배송 완료' },
+    },
+    {
+      id: 'border', name: '국경 도로 스턴트', city: 'brownsville', ...CITY_ROAD, ...ON_STREETS,
+      brief: '<b>스턴트</b> 샘스 메모리얼 스타디움에서 출발해 국경 강변 도로를 따라 UTRGV 캠퍼스까지. 정체 구간은 점프대로 차 지붕 위로, 아슬 추월과 배럴롤로 <b>콤보 배수</b>를 키워요.',
+      route: { from: 'Sams Memorial Stadium', to: 'The University of Texas Rio Grande Valley' },
+      ramps: (L) => { const j = [Math.round(L * 0.35) - 40, Math.round(L * 0.7) - 40];
+        return [...rampRun(260, L - 150, 170, 4).filter((r) => j.every((s) => Math.abs(r.s0 - s) > 110)), ...j.map((s0) => ({ s0, len: 18, dL: -12, dR: 12, h: 3.4 }))]; },
+      jams: (L) => [[Math.round(L * 0.35), Math.round(L * 0.35) + 150], [Math.round(L * 0.7), Math.round(L * 0.7) + 150]],
+      jamMix: { cybertruck: 3, model3: 2, raptor: 2 },
+      mission: { type: 'stunt', scores: [14000, 28000, 45000] },
+      radio: [[20, '국경 도로 스턴트 쇼야. 관객은 강 양쪽 두 나라.'], [800, '앞에 정체! 점프대 타고 지붕 위로!']],
+      lines: { finish: '대학생들이 우리 묘기 보고 전공을 항공우주로 바꾼대.', failed: '박수가 좀 약했어. 지붕 위에서 콤보를 이어 봐.' },
+      poster: CITY_POSTER, finishText: 'FINISH · UTRGV 캠퍼스',
+      text: { clear: 'SHOW TIME', clearTitle: '스턴트 쇼 성공' },
+    },
+    {
+      id: 'causeway', name: '퀸 이사벨라 코즈웨이', city: 'padre', ...CITY_ROAD, ...ON_STREETS,
+      brief: '<b>레이스</b> 진짜 사우스파드레 지도. 포트 이사벨 등대에서 4km짜리 퀸 이사벨라 코즈웨이를 건너 섬 끝 테슬라 슈퍼차저까지. 상대는 스타베이스 출근길 사이버트럭 셋.',
+      route: { from: 'Port Isabel Lighthouse', to: 'Tesla Supercharger' },
+      sea: [-1380, -3400, 2240, 3400],   // the Laguna Madre between Port Isabel and the island (world metres)
+      ramps: (L) => rampRun(300, L - 150, 260, 3),
+      mission: { type: 'rivals', time: 82, perfect: 2, rivals: [
+        { type: 'cybertruck', name: '출근길 사이버트럭 #1', label: 'COMMUTER 1', speed: 56, d: -3, s: 24 },
+        { type: 'cybertruck', name: '출근길 사이버트럭 #2', label: 'COMMUTER 2', speed: 58, d: 9, s: 30 },
+        { type: 'cybertruck', name: '지각한 엔지니어', label: 'LATE ENGINEER', speed: 59.5, d: -9, s: 36, tagColor: '#ffc83d' },
+      ] },
+      radio: [[20, '포트 이사벨 등대야. 저 긴 다리가 퀸 이사벨라 코즈웨이. 텍사스에서 제일 긴 다리래.'], [2200, '다리 한가운데야. 바다 바람 세니까 착지 조심.'], [4200, '섬에 들어왔어. 슈퍼차저까지 밟아!']],
+      lines: { finish: '우승! 지각한 엔지니어는 오늘도 지각. 이제 하이웨이 4로 발사장 가자.', failed: '출근길 사이버트럭한테 졌어… 퍼펙트 착지 부스트로 붙어.' },
+      poster: CITY_POSTER, finishText: 'FINISH · 테슬라 슈퍼차저',
+      text: { clear: 'WINNER', clearTitle: '코즈웨이 우승' },
+    },
+    {
+      id: 'launch', name: '하이웨이 4 발사',
+      brief: '<b>주행</b> 하이웨이 4를 따라 메가베이와 로켓 가든, 모래 언덕, 랩터 시험대를 지나 발사장까지. 결승선을 넘으면 젓가락이 차를 집어 <b>스타쉽에 합체, 발사</b>!',
+    },
+  ],
   build,
   tick,
   finishCam,
@@ -236,6 +307,7 @@ function groundY(s, d) {
 export function shipKit(k) { MAT ??= mats(k); return { makeShip, makeBooster, R, BOOSTER_H, SHIP_H, MAT }; }
 
 function build(k) {
+  if (k.CITY) { k.buildCity(); if (k.ST.sea) buildSea(k, k.ST.sea); k.finishArch(k.ST.finishText || 'FINISH'); return; }
   live.k = k; MAT = mats(k);
   const rand = rnd(6);
   const { scene } = k;
@@ -259,6 +331,11 @@ function build(k) {
   k.finishArch('FINISH · 오비탈 발사대');
 }
 
+// the lagoon under the causeway: OSM draws the sea as coastline lines, not polygons, so the city ground
+// would be dry there. Lay a water rectangle (world x0, z0, x1, z1) between the two shores.
+function buildSea(k, [x0, z0, x1, z1]) {
+  k.scene.add(new THREE.Mesh(cityPolys([[-1, [x0, z0, x1, z0, x1, z1, x0, z1]]], -0.07), k.M.water));
+}
 function buildWater(k) {
   const N = 256;
   const nor = k.canvasTex(N, N, (c) => {

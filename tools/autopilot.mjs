@@ -53,7 +53,7 @@ for (const ev of evs) {
         if (M.type === 'stunt' && P.grounded && P.charges > 1 && B.t > B.rollT) { I.jumpEdge = true; B.rollT = B.t + 1.6; }
         // corners: hold a speed the tyres can carry
         let kMax = 0; for (let ds = 0; ds < 60; ds += 5) kMax = Math.max(kMax, Math.abs(g.curvature(P.s + ds)));
-        if (kMax > 0) { const vc = Math.sqrt(58 / kMax); if (P.v > vc + 1.5) wantV = Math.min(wantV ?? 1e9, vc); }
+        if (kMax > 0) { const vc = Math.sqrt(g.gripLimit() * 0.92 / kMax); if (P.v > vc + 1.5) wantV = Math.min(wantV ?? 1e9, vc); }
         // steering: proportional to the error plus the bend's push
         const ff = -(P.lat || 0) * 0.075 / 15;
         I.axis = Math.max(-1, Math.min(1, (td - P.d) * 0.3 + ff * (P.grounded ? 1 : 0)));
@@ -63,6 +63,9 @@ for (const ev of evs) {
         if (!P.grounded) { const gr = g.carGround(P.s, P.d, P.y), fall = -(P.vy - (P.kG || 0) * 0); I.jump = fall > 0 && (P.y - gr) / Math.max(fall, 0.1) < 0.7; } else I.jump = false;
         if (M.type !== 'tutorial' && P.boostG >= 35 && kMax < 0.004 && !I.brake) I.boost = true; else if (M.type !== 'tutorial') I.boost = false;
         if (g.boss?.B.active && B.t > B.fireT) { I.fireEdge = true; B.fireT = B.t + 0.8; }
+        // gun stages: hold fire in bursts so it never overheats
+        if (g.ST?.gun) I.fire = P.overheat <= 0 && P.heat < (I.fire ? 85 : 40);
+        I.gas = true;
         g.step(DT);
         I.jumpEdge = false; if (M.type === 'tutorial') I.boost = false;
       }

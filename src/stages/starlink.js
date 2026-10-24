@@ -1,65 +1,90 @@
 // Stage 7: Starlink orbit, 550 km up. The satellites of one orbital plane are docked nose to tail and their
-// flat buses are the road; solar wings fan out on both sides. Low gravity, three missing satellites to fly
+// flat buses are the road; solar wings fan out on both sides. Low gravity, missing satellites to fly
 // across, tumbling debris crossing the lanes, late-delivery parcel satellites and a clone constellation as
 // traffic. Earth turns below (day side, city lights past the terminator), the Moon waits ahead.
-// No boss (bonus stage): at the end the Starship that dropped you off scoops the roadster up and burns for the Moon.
+// No boss (bonus stage): at the end of every event a Starship scoops the roadster up; after the last one it burns for the Moon.
 import * as THREE from 'three';
 import { shipKit } from './starbase.js';
 
 const ROAD_HALF = 10;
-const FINISH_S = 3000;
+const LANES = [-7.5, -2.5, 2.5, 7.5];
 const SAT = 38.5, DOCK = 2.5;          // one satellite bus + its docking truss, along the road
 const WING_W = 26, WING_L = 11;
-const GAPS = [[770, 820], [1420, 1490], [2150, 2250]];
-const SHIP_END = { s: 3020, d: 26 };   // the waiting Starship (nose at s + 60)
 const SHIP_START = { s: -80, d: -26 };
 
 const sm = THREE.MathUtils.smoothstep;
-function elev(s) {
-  const swell = sm(s, 1520, 1600) * (1 - sm(s, 1960, 2040));
-  return 4 * Math.sin(s / 150) + 11 * Math.sin((s - 1520) / 55) * swell;
+
+// ---------- course factory ----------
+// the deck's long orbital wave, plus swells (stretches where it rolls hard: [s0, s1, amp, wavelength]);
+// a full-width launch ramp before every missing satellite unless the course puts laser pads there
+function orbit({ finish, gaps = [], wave = [4, 150], swells = [], sway = [40, 500], ramps = [], padGaps = [], debris = [], extra = [], coinRuns = [] }) {
+  const elev = (s) => {
+    let y = wave[0] * Math.sin(s / wave[1]);
+    for (const [s0, s1, A, wl] of swells) y += A * Math.sin((s - s0) / wl) * sm(s, s0, s0 + 80) * (1 - sm(s, s1 - 80, s1));
+    return y;
+  };
+  return {
+    finish, elev,
+    gaps: gaps.map(([s0, s1]) => ({ s0, s1, respawn: s0 - 130 })),
+    cx: (s) => sway[0] * Math.sin(s / sway[1]) * sm(s, 100, 500) * (1 - sm(s, finish - 200, finish)),
+    ramps: [
+      ...gaps.filter((g, i) => !padGaps.includes(i)).map(([s0, s1]) => ({ s0: s0 - 26, len: 16, dL: -ROAD_HALF, dR: ROAD_HALF, h: s1 - s0 > 80 ? 4 : 3 })),
+      ...ramps,
+    ],
+    pads: gaps.filter((g, i) => padGaps.includes(i)).flatMap(([s0]) => LANES.map((d) => ({ s: s0 - 22, d, l: 3, w: 2.2, v: 16 }))),
+    // debris: [s, sweep speed, phase] chunks that sweep across the lanes; tick moves the hit boxes with them
+    hazards: debris.map(([s, w, ph]) => ({ s, w, ph, A: 13, l: 2, dL: 99, dR: 99, h: 2.4, y0: -2, active: true, text: ['우주 쓰레기 충돌!', '경쟁사 위성 파편 · 급감속', '#ff9a3d'] })),
+    pickups: [
+      // an arc over every hole
+      ...gaps.flatMap(([s0, s1], i) => range(0, s1 - s0 + 30, 8).map((x) => ['coin', s0 - 5 + x, LANES[(i + 1) % 4], 2 + 0.2 * x - 0.2 * x * x / (s1 - s0 + 30)])),
+      // lane runs (bonus stage: Dogecoin everywhere)
+      ...coinRuns.flatMap(([a, b], j) => range(a, b, 10).map((s, i) => ['coin', s, LANES[((i >> 2) + j) % 4], 1.2])),
+      ...extra,
+    ],
+    trafficMaxS: finish - 40,
+    shipEnd: { s: finish + 20, d: 26 },   // the waiting Starship (nose at s + 60)
+  };
 }
-const elevSlope = (s) => elev(s + 0.5) - elev(s - 0.5);
+const debrisRun = (list, w0, step, ph0) => list.map((s, i) => [s, w0 + (i % 3) * 0.22, i * step + ph0]);
+const sats = (n) => ({
+  parcel: { make: () => makeParcelSat('#a8774a', '지각배송'), name: '지각배송 위성', speed: [18, 23], n, color: '#a8774a' },
+});
 
-// space debris: chunks that sweep across the lanes; tick moves the hit boxes with them
-const DEBRIS = [
-  ...[940, 985, 1030, 1090, 1150, 1215, 1280].map((s, i) => ({ s, w: 0.8 + (i % 3) * 0.22, ph: i * 2.1, A: 13 })),
-  ...[2330, 2400, 2460, 2530, 2600, 2650, 2720].map((s, i) => ({ s, w: 1.0 + (i % 3) * 0.2, ph: i * 1.7 + 0.5, A: 13 })),
-].map((d) => Object.assign(d, { l: 2, dL: 99, dR: 99, h: 2.4, y0: -2, active: true, text: ['우주 쓰레기 충돌!', '경쟁사 위성 파편 · 급감속', '#ff9a3d'] }));
-
-export default {
-  id: 'starlink', num: 7, name: '스타링크 궤도',
-  roadHalf: ROAD_HALF, lanes: [-7.5, -2.5, 2.5, 7.5], finish: FINISH_S,
-  gravity: 14,
-  gaps: GAPS.map(([s0, s1]) => ({ s0, s1, respawn: s0 - 130 })),
-  splashY: () => -16,
-  elev,
-  cx(s) { return 40 * Math.sin(s / 500) * sm(s, 100, 500); },
-  ramps: [
-    { s0: 744, len: 16, dL: -ROAD_HALF, dR: ROAD_HALF, h: 3.0 },
-    { s0: 560, len: 14, dL: 3, dR: 9, h: 2.6 },
-    { s0: 1720, len: 16, dL: -9, dR: -3, h: 4.2 },     // the legend floats above this one's flight
-    { s0: 2124, len: 16, dL: -ROAD_HALF, dR: ROAD_HALF, h: 4.0 },
-    { s0: 2860, len: 14, dL: -3, dR: 3, h: 2.6 },
-  ],
-  // laser-link boost pads in every lane before the second hole
-  pads: [-7.5, -2.5, 2.5, 7.5].map((d) => ({ s: 1398, d, l: 3, w: 2.2, v: 16 })),
-  hazards: DEBRIS,
-  legend: { s: 1830, d: -6, y: 15 },
-  pickups: [
-    // arcs over the three holes
-    ...range(0, 90, 8).map((x) => ['coin', 765 + x, 0, 2 + 0.19 * x - 0.0021 * x * x]),
-    ...range(0, 120, 9).map((x) => ['coin', 1405 + x, -2.5, 3 + 0.25 * x - 0.0021 * x * x]),
-    ...range(0, 130, 9).map((x) => ['coin', 2142 + x, 2.5, 2.5 + 0.22 * x - 0.0017 * x * x]),
-    // lane runs between the hazards (bonus stage: Dogecoin everywhere)
-    ...range(120, 420, 10).map((s, i) => ['coin', s, [-7.5, -2.5, 2.5, 7.5][(i >> 2) % 4], 1.2]),
+// event 1: stranded crews to pick up and drop off along a calm plane with one missing satellite
+const RESCUE = orbit({ finish: 3300, gaps: [[1580, 1640]], wave: [3, 190], swells: [[2300, 2700, 7, 60]], sway: [55, 420],
+  debris: debrisRun([1950, 2010, 2070], 0.7, 2.3, 0), coinRuns: [[150, 400], [2780, 3000]],
+  extra: [['h100', 1200, 7.5, 1.6], ['air', 1500, -2.5, 1.2], ['h100', 2500, 0, 3.2], ['air', 3100, 2.5, 1.2]] });
+// event 2: the junk belt: four holes, two big swells, debris everywhere, made for low-gravity flips
+const JUNK = orbit({ finish: 3200, gaps: [[540, 600], [1180, 1260], [1900, 1960], [2580, 2680]], padGaps: [2], wave: [5, 130],
+  swells: [[700, 1100, 12, 50], [2050, 2450, 13, 48]], sway: [30, 360],
+  ramps: [{ s0: 380, len: 14, dL: -9, dR: -3, h: 3.6 }, { s0: 1500, len: 16, dL: 3, dR: 9, h: 4.4 }, { s0: 2900, len: 14, dL: -3, dR: 3, h: 3 }],
+  debris: [...debrisRun([300, 350, 410, 460, 1320, 1370, 1420, 1470, 1530, 1600], 0.9, 1.9, 0.3), ...debrisRun([2000, 2700, 2760, 2820, 2880, 3000, 3060], 1.1, 1.6, 1)],
+  coinRuns: [[150, 280], [1300, 1450]],
+  extra: [['h100', 900, 7.5, 6], ['air', 1700, -7.5, 1.2], ['h100', 2300, 0, 6], ['air', 2850, 2.5, 1.2]] });
+// event 3: a drag race against the clone constellation: no holes, long sweeping bends, one swell
+const CLONES = orbit({ finish: 3400, wave: [3, 220], swells: [[1600, 2000, 6, 70]], sway: [90, 380],
+  coinRuns: [[300, 600], [2300, 2700]],
+  extra: [['air', 900, 2.5, 1.2], ['h100', 1800, -7.5, 1.6], ['air', 2900, -2.5, 1.2]] });
+// event 4: the original plane, then the Starship to the Moon
+const DOCK_RUN = orbit({ finish: 3000, gaps: [[770, 820], [1420, 1490], [2150, 2250]], padGaps: [1], swells: [[1520, 2040, 11, 55]],
+  ramps: [{ s0: 560, len: 14, dL: 3, dR: 9, h: 2.6 }, { s0: 1720, len: 16, dL: -9, dR: -3, h: 4.2 }, { s0: 2860, len: 14, dL: -3, dR: 3, h: 2.6 }],
+  debris: [...debrisRun([940, 985, 1030, 1090, 1150, 1215, 1280], 0.8, 2.1, 0), ...debrisRun([2330, 2400, 2460, 2530, 2600, 2650, 2720], 1.0, 1.7, 0.5)],
+  coinRuns: [[120, 420], [2780, 2980]],
+  extra: [
     ...range(1560, 1960, 12).map((s, i) => ['coin', s, i % 2 ? 2.5 : -2.5, 1.2]),
-    ...range(2780, 2980, 10).map((s, i) => ['coin', s, 7.5 - (i % 4) * 5, 1.2]),
     ['h100', 900, 7.5, 1.6], ['h100', 1600, -7.5, 1.6], ['h100', 2500, 0, 3.2],
     ['air', 480, -2.5, 1.2], ['air', 1340, 7.5, 1.2], ['air', 2060, -7.5, 1.2], ['air', 2780, 2.5, 1.2],
     ['gpu', 300, 2.5, 1.4], ['gpu', 1120, -7.5, 1.4], ['gpu', 1700, 7.5, 1.4], ['gpu', 2300, -2.5, 1.4], ['gpu', 2900, 7.5, 1.4],
-  ],
-  trafficMaxS: FINISH_S - 40,
+  ] });
+const POSTER = { s: 300, d: 2, y: 0, cam: { back: 11, side: -4, y: 3, ahead: 20, lookSide: 3, lookY: 2, fov: 58 } };
+
+export default {
+  id: 'starlink', num: 7, name: '스타링크 궤도',
+  roadHalf: ROAD_HALF, lanes: LANES,
+  gravity: 14,
+  ...DOCK_RUN,
+  splashY: () => -16,
+  legend: { s: 1830, d: -6, y: 15 },
   road: { hide: true },
   env: {
     bg: false, hdri: '', sun: ['#fff6ea', 3.4], hemi: ['#0a0e18', '#2c4a7c', 0.55],
@@ -68,11 +93,11 @@ export default {
     fog: ['#03050b', 2600, 6000], exposure: 0.95, bloom: 0.38,
   },
   traffic: {
-    parcel: { make: () => makeParcelSat('#a8774a', '지각배송'), name: '지각배송 위성', speed: [18, 23], n: 6, color: '#a8774a' },
+    ...sats(6),
     clone: { make: () => makeParcelSat('#b8302c', '천범 ★'), name: '천범 복제 위성', speed: [21, 26], n: 6, range: [2250, 2950], color: '#b8302c' },
   },
   radio: [
-    [20, '궤도 도착! 스타링크 위성들이 줄지어서 도로가 됐어. 우주 고속도로다!'],
+    [20, '마지막 궤도 구간! 이번엔 진짜 달로 가는 스타쉽이 끝에서 기다려.'],
     [260, '저 갈색 상자들 보여? 지각배송 위성. 항상 한 발 늦게 오는 그 회사 거.'],
     [640, '앞에 위성 하나가 빠졌어! 점프대 타고 건너!'],
     [900, '우주 쓰레기 구간! 굴러오는 파편은 점프로 넘거나 피해.'],
@@ -94,6 +119,50 @@ export default {
     meta: '고도 550km · 궤도 속도 7.6km/s · 리트윗 420만', load: '레이저 링크 정렬 중 · 궤도 속도 맞추는 중',
     hud: 'STAGE 7 · STARLINK ORBIT', clear: 'STAGE 07 CLEAR', clearTitle: '도킹 성공',
   },
+  // chapter 7: three jobs on their own orbital planes, then the original plane to the Moon ship
+  events: [
+    {
+      id: 'rescue', name: '갇힌 우주인 구조', ...RESCUE, legend: null, traffic: sats(5),
+      brief: '<b>배송</b> 궤도에 손님들이 떠 있어요. 9개월째 못 돌아간 우주인, 우주 관광객, 고장 난 화장실 수리공까지. 초록 정차 구역에서 <b>↓ 브레이크</b>. 중력이 약해서 제동 거리가 길어요.',
+      mission: { type: 'deliver', time: 102, allowMiss: 1, stops: [
+        { s: 820, d: 7.5, name: '우주 정거장 화장실', thanks: '화장실이 또 고장 났어요. 빨리요!', line: '수리공 내렸다. 우주 화장실 수리비가 2천만 달러래.' },
+        { s: 1320, d: -7.5, name: '스타-라이너 캡슐', thanks: '9개월 만에 집에 가요!', line: '저 우주인들 8일 출장 왔다가 9개월 있었대. 캡슐이 고장 나서.' },
+        { s: 2150, d: 7.5, name: '우주 관광객', thanks: '5천만 달러짜리 여행인데 기내식이 없네요' },
+        { s: 2950, d: -7.5, name: '궤도 피자 가게', thanks: '무중력이라 토핑이 다 날아갔어요', line: '피자 배달 완료. 치즈가 아직 공중에 떠 있어.' },
+      ] },
+      radio: [[20, '궤도 택시 알바야. 우주에 갇힌 손님이 넷. 중력이 약하니까 브레이크 일찍!'], [1450, '앞에 위성 하나 빠졌어. 점프대로 넘어. 착지하면 바로 다음 손님은 아니니까 안심.'], [2250, '너울 구간이야. 꼭대기에서 붕 뜨니까 공중에서 차선 맞춰.']],
+      lines: { finish: '손님 다 내려 줬어. 팁은 우주 정거장 쿠키 한 봉지래.', failed: '우주인들이 또 기다리게 됐어… 다시 가자.' },
+      poster: POSTER, finishText: 'FINISH · 궤도 택시 승강장',
+      text: { clear: 'DELIVERY DONE', clearTitle: '구조 완료' },
+    },
+    {
+      id: 'junk', name: '우주 쓰레기 스턴트', ...JUNK, legend: { s: 1560, d: 6, y: 16 }, traffic: sats(4),
+      brief: '<b>스턴트</b> 경쟁사 위성 파편이 둥둥 떠다니는 쓰레기 벨트. 구멍 넷, 큰 너울 둘. 낮은 중력으로 오래 떠서 <b>배럴롤</b>을 여러 번 돌리고, 파편 사이 아슬 추월로 콤보를 이어요.',
+      mission: { type: 'stunt', scores: [6000, 13000, 24000] },
+      radio: [[20, '우주 쓰레기 벨트야. 위험하지만 묘기 부리기엔 최고지. 중력이 약해서 롤 몇 바퀴 돌릴 수 있어.'], [680, '너울 구간! 꼭대기마다 날아올라서 롤!'], [1850, '레이저 패드 밟고 구멍 넘어!'], [2550, '마지막 구멍 길어. 공중에서 분사 꾹!']],
+      lines: { finish: '쓰레기 벨트 통과! 파편들이 우리 묘기에 박수 쳤어. 사실 그냥 부딪힌 거지만.', failed: '파편보다 점수가 적었어. 낮은 중력 활용해서 롤 더 돌려 봐.' },
+      poster: POSTER, finishText: 'FINISH · 쓰레기 벨트 탈출',
+      text: { clear: 'SHOW TIME', clearTitle: '스턴트 쇼 성공' },
+    },
+    {
+      id: 'clones', name: '복제 위성 드래그', ...CLONES, legend: null,
+      traffic: { ...sats(5), clone: { make: () => makeParcelSat('#b8302c', '천범 ★'), name: '천범 복제 위성', speed: [21, 26], n: 8, range: [400, 3300], color: '#b8302c' } },
+      brief: '<b>레이스</b> 똑같이 생긴 위성을 끝없이 찍어내는 천범 컨스텔레이션이 궤도 레이스를 걸어왔어요. 상대는 복제 위성 셋. 너울에서 퍼펙트 착지 부스트로 따라잡아요.',
+      mission: { type: 'rivals', time: 62, perfect: 2, rivals: [
+        { type: 'clone', name: '천범 복제 #1', label: 'CLONE 1', speed: 53, d: -2.5, s: 24 },
+        { type: 'clone', name: '천범 복제 #2', label: 'CLONE 2', speed: 55, d: 7.5, s: 30 },
+        { type: 'clone', name: '천범 복제 #9999', label: 'CLONE 9999', speed: 57, d: -7.5, s: 36, tagColor: '#ffc83d' },
+      ] },
+      radio: [[20, '천범 위성들이 레이스 걸어왔어. 셋 다 똑같이 생겼지? 복붙이라 그래.'], [1550, '너울 구간이야. 점프로 퍼펙트 착지하면 부스트!'], [2800, '스타쉽 보인다! 결승까지 밟아!']],
+      lines: { finish: '원본이 이겼다! 복제 위성들이 우리 차도 복사하겠대. 저작권은 우리 거야.', failed: '복사본한테 졌어… 퍼펙트 착지 부스트로 붙어.' },
+      poster: POSTER, finishText: 'FINISH · 궤도 결승선',
+      text: { clear: 'WINNER', clearTitle: '궤도 레이스 우승' },
+    },
+    {
+      id: 'dock', name: '스타쉽 도킹',
+      brief: '<b>주행</b> 원래의 위성 도로. 구멍 셋과 우주 쓰레기 구간을 지나 끝에서 기다리는 스타쉽 화물칸으로. 들어가면 <b>달로 출발</b>!',
+    },
+  ],
   build,
   tick,
   finishCam,
@@ -104,6 +173,10 @@ function rnd(seed) { let x = seed >>> 0; return () => { x = (x * 1664525 + 10139
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _e = new THREE.Euler();
 const live = { k: null, earth: null, atmo: null, moon: null, sun: null, debris: [], ships: null, cut: null, links: null, plume: null };
 const inGap = (s) => GAPS.some(([a, b]) => s > a - 1 && s < b + 1);
+
+// the course being built (set from the event's fields in build)
+let FINISH_S, GAPS, SHIP_END, DEBRIS, elev;
+const elevSlope = (s) => elev(s + 0.5) - elev(s - 0.5);
 
 // ---------- textures ----------
 function canvas(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); return c; }
@@ -204,6 +277,8 @@ export function makeParcelSat(color, label) {
 let MAT = null;
 function build(k) {
   live.k = k;
+  ({ finish: FINISH_S, shipEnd: SHIP_END, hazards: DEBRIS, elev } = k.ST);
+  GAPS = k.ST.gaps.map((g) => [g.s0, g.s1]);
   const maxA = k.IS_MOBILE ? 4 : 8;
   const deck = tex(deckCanvas(false)), deckE = tex(deckCanvas(true), true);
   for (const t of [deck, deckE]) t.anisotropy = maxA;
