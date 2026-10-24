@@ -88,7 +88,7 @@ const SAVE_KEY = 'roadster-racer-save-v1';
 const save = loadSave();
 function loadSave() {
   // camp: per event key ('austin:deliver') { done, stars, best, score, play (seconds actually played), tries }
-  const base = () => ({ level: 1, xp: 0, doge: 0, best: 0, bests: {}, camp: {}, eggs: {}, ach: {}, play: 0, hp: 100, parts: 3, partsT: Date.now(), up: { magnet: 0, tank: 0, comp: 0, motor: 0, fan: 0, armor: 0, optimus: 0 } });
+  const base = () => ({ level: 1, xp: 0, doge: 0, best: 0, bests: {}, camp: {}, eggs: {}, ach: {}, play: 0, hp: 100, parts: 3, partsT: Date.now(), up: { magnet: 0, tank: 0, comp: 0, motor: 0, fan: 0, armor: 0, optimus: 0, copilot: 0 } });
   try {
     const s = Object.assign(base(), JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); s.up = Object.assign(base().up, s.up);
     if (s.best && !s.bests.austin) s.bests.austin = s.best; // v1 saves kept one best time (Austin)
@@ -139,6 +139,8 @@ const UPGRADES = {
   motor: { name: '듀얼 모터', desc: (l) => `최고속도 +${l * 4 * 3.6 | 0}km/h`, max: 6, cost: (l) => Math.round(110 * Math.pow(1.6, l)) },
   fan: { name: '흡착 팬 (스페이스X 패키지)', desc: (l) => `코너 접지력 ${(gripLimit(l) / 9.8).toFixed(1)}G · 더 빠르게 꺾어도 안 밀려요`, max: 6, cost: (l) => Math.round(130 * Math.pow(1.65, l)) },
   armor: { name: '배터리 팩 보강', desc: (l) => `최대 내구도 ${100 + l * 20}`, max: 5, cost: (l) => Math.round(150 * Math.pow(1.7, l)) },
+  // the AI copilot (user, 2026-10-24): lands the car for you, then shoots for you. Parody of Grok
+  copilot: { name: '그럭 AI 부조종사 (그럭저럭 잘함)', desc: (l) => ['알아서 착지·사격까지 해 주는 AI · 레벨 1: 착지 직전 압축공기 자동 분사', '착지 직전 자동 분사로 하드 랜딩 방지 · 다음: 자동 퍼펙트 착지', '자동 퍼펙트 착지 · 다음: 보스전 자동 사격', '자동 퍼펙트 착지 + 보스전·사격 구간 자동 공격'][l], max: 3, cost: (l) => [350, 900, 1800][l] },
   optimus: { name: '옵티머스 동승 정비', desc: (l) => (l ? `옵티머스가 옆자리에서 초당 ${(0.35 + 0.35 * l).toFixed(2)}씩 수리 · 초록 구간까지만` : '옵티머스가 옆자리에 타서 달리는 중에 고쳐 줘요 · 초록 구간까지만'), max: 3, cost: (l) => Math.round(400 * Math.pow(2, l)) },
 };
 const magnetRange = (l = save.up.magnet) => 3 + l * 1.6 + (save.level - 1) * 0.15;
@@ -916,6 +918,7 @@ function spawnPickups() {
 const input = { left: false, right: false, jump: false, brake: false, boost: false, fire: false, gas: false, stickGas: false, stickBrake: false, jumpEdge: false, fireEdge: false };
 const KEYMAP = { KeyF: 'fire', KeyE: 'fire', Enter: 'fire', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'jump', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake', ShiftLeft: 'boost', ShiftRight: 'boost', KeyB: 'boost' };
 addEventListener('keydown', (e) => {
+  if (boss?.inCut && !e.repeat && e.code !== 'Escape' && e.code !== 'KeyP') { e.preventDefault(); boss.skipCut(); return; }
   const k = KEYMAP[e.code]; if (!k) return;
   e.preventDefault();
   if (k === 'jump' && !input.jump) input.jumpEdge = true;
@@ -1043,6 +1046,7 @@ function setPause(on) {
 }
 document.getElementById('pauseBtn').addEventListener('click', () => { haptic('tap'); setPause(true); });
 document.getElementById('resumeBtn').addEventListener('click', () => setPause(false));
+document.getElementById('cine').addEventListener('pointerdown', (e) => { e.preventDefault(); boss?.skipCut(); });
 document.getElementById('restartBtn').addEventListener('click', () => { setPause(false); startRace(); });
 document.getElementById('pMapBtn').addEventListener('click', () => location.reload());
 addEventListener('keydown', (e) => { if (e.code === 'Escape' || e.code === 'KeyP') setPause(!paused); });
@@ -1356,10 +1360,9 @@ function stepGun(dt) {
   P.overheat = Math.max(0, P.overheat - dt);
   P.heat = Math.max(0, P.heat - dt * (P.overheat > 0 ? 45 : 30));
   gunCd -= dt;
-  if (input.fire && P.overheat <= 0 && gunCd <= 0) {
-    gunCd = 1 / GUN.rate;
-    P.heat += 100 / (GUN.rate * GUN.heat) + 30 / GUN.rate;
-    if (P.heat >= 100) { P.heat = 100; P.overheat = 1.6; toast('과열!', '랩터 캐논 냉각 중', '#ff6a1a'); blip(400, 90, 0.4, 'sawtooth', 0.12); }
+  // 그럭 Lv3 fires in bursts on its own whenever something is in the cone, keeping the cannon off overheat
+  const autoGun = !input.fire && (save.up.copilot || 0) >= 3 && P.heat < 78;
+  if ((input.fire || autoGun) && P.overheat <= 0 && gunCd <= 0) {
     // nearest target ahead, in a cone in front of the car
     const me = world(P.s, P.d, P.y + 1, _gv);
     let best = null, bd = 1e9;
@@ -1368,13 +1371,19 @@ function stepGun(dt) {
       if (dz < 3 || dist > 170 || Math.abs(t.pos.x - me.x) > dz * 0.9 + 6) continue;
       const score = dist - (t.boss ? 25 : 0); if (score < bd) { bd = score; best = t; }
     }
-    const sh = gunShots.find((x) => !x.live);
-    if (sh) {
-      gunSide = -gunSide;
-      world(P.s + 1.8, P.d + gunSide * 0.95, P.y + 1.05, sh.pos);
-      sh.tgt = best; sh.live = true; sh.life = 0.9; sh.m.visible = true;
-      sh.dir = best ? best.pos.clone().sub(sh.pos).normalize() : new THREE.Vector3(-Math.sin(frame(P.s).yaw), 0.02, -Math.cos(frame(P.s).yaw));
-      blip(1400, 700, 0.06, 'square', 0.035);
+    if (autoGun && !best) gunCd = 0.1;
+    else {
+      gunCd = 1 / GUN.rate;
+      P.heat += 100 / (GUN.rate * GUN.heat) + 30 / GUN.rate;
+      if (P.heat >= 100) { P.heat = 100; P.overheat = 1.6; toast('과열!', '랩터 캐논 냉각 중', '#ff6a1a'); blip(400, 90, 0.4, 'sawtooth', 0.12); }
+      const sh = gunShots.find((x) => !x.live);
+      if (sh) {
+        gunSide = -gunSide;
+        world(P.s + 1.8, P.d + gunSide * 0.95, P.y + 1.05, sh.pos);
+        sh.tgt = best; sh.live = true; sh.life = 0.9; sh.m.visible = true;
+        sh.dir = best ? best.pos.clone().sub(sh.pos).normalize() : new THREE.Vector3(-Math.sin(frame(P.s).yaw), 0.02, -Math.cos(frame(P.s).yaw));
+        blip(1400, 700, 0.06, 'square', 0.035);
+      }
     }
   }
   for (const sh of gunShots) {
@@ -1402,6 +1411,7 @@ function slopeAt(s, d, y) {
 }
 function step(dt) {
   raceT += dt;
+  if ((save.up.copilot || 0) >= 3 && boss?.B.active && !GUN && P.coil >= 100 && boss.fireCoil()) floatText('그럭: 코일 대신 쐈어');
   if (boss) { boss.update(dt); if (!GUN && input.fireEdge) { input.fireEdge = false; if (!boss.fireCoil() && boss.B.active) floatText('코일 충전 중…'); } }
   if (GUN) { input.fireEdge = false; stepGun(dt); }
   const fr0 = frame(P.s);
@@ -1527,8 +1537,12 @@ function step(dt) {
     P.air += dt;
     P.vy -= G * dt;
     const rv = P.vy - eS * P.v; // vertical speed relative to the road under you
-    if (input.jump && rv < 3 && P.fuel > 0) {
-      P.thrusting = true; P.lastThrust = raceT; P.fuel -= dt; P.vy += 27 * dt; if (rv < -7) P.vy += 20 * dt;
+    // 그럭 copilot: fires the landing thrust itself when the ground is coming up fast (Lv1), and right at
+    // touchdown so it counts as a perfect landing (Lv2). Only Lv2+ thrust counts toward the perfect window.
+    const cop = save.up.copilot || 0, h = P.y - g, tti = rv < -0.5 ? h / -rv : 9;
+    const auto = !input.jump && cop > 0 && P.air > 0.3 && rv < 3 && ((rv < -9 && tti < 0.75) || (cop >= 2 && tti < 0.22));
+    if ((input.jump || auto) && rv < 3 && P.fuel > 0) {
+      P.thrusting = true; if (!auto || cop >= 2) P.lastThrust = raceT; P.fuel -= dt; P.vy += 27 * dt; if (rv < -7) P.vy += 20 * dt;
       if (Math.random() < 0.8) { const base = world(P.s, P.d + (Math.random() - 0.5) * 1.6, P.y); puff(base, new THREE.Vector3(0, -14, 0), '#cfefff', 0.6, 0.35); }
     }
     P.y += (P.vy - eS * P.v) * dt;
@@ -2090,7 +2104,7 @@ function loop(now) {
     else if (Math.ceil(countdown + dt) !== n) blip(440, 440, 0.15, 'square', 0.08);
   }
   if (state === 'race' && !hud.count.hidden && raceT > 0.8) hud.count.hidden = true;
-  if (state === 'race' && !paused && !window.__game?.manual) { tickAcc += dt / SLOW; while (tickAcc >= TICK) { step(TICK); tickAcc -= TICK; } }
+  if (state === 'race' && !paused && !window.__game?.manual && !boss?.inCut) { tickAcc += dt / SLOW; while (tickAcc >= TICK) { step(TICK); tickAcc -= TICK; } }
   else if (state === 'finish') { P.v = Math.max(0, P.v - 30 * dt / SLOW); P.s += P.v * dt / SLOW; P.thrusting = false; }
   if (state !== 'loading') { placeCar(); syncTraffic(time); syncPickups(time); boss?.sync(time); }
   if (state === 'poster') posterStage(time);
@@ -2102,7 +2116,11 @@ function loop(now) {
     rec.play += dt; save.play += dt; if ((playSaveT += dt) > 5) { playSaveT = 0; writeSave(); }
   }
   if (toastT > 0) toastT -= dt;
-  if (!window.__game?.frozen) updateCamera(dt, time);
+  if (!window.__game?.frozen) {
+    // a boss entrance cutscene owns the camera while it plays; the chase cam then eases back from that shot
+    if (boss?.inCut && boss.cine(paused ? 0 : dt, time, camera)) { camPos.copy(camera.position); camLook.copy(car.position); }
+    else updateCamera(dt, time);
+  }
   sky.position.copy(camera.position);
   const fr = frame(P.s || 0);
   sun.position.copy(car.position).addScaledVector(SUN_DIR, 80); sun.position.y = car.position.y + 45; sun.target.position.copy(car.position);
@@ -2125,7 +2143,7 @@ async function boot() {
   await carReady; await trafficReady;
   car.add(coldGas);
   try {
-    boss = createBoss({ damage, faces: FACES, scene, P, LANES, ROAD_HALF, world, frame, carGround, puff, toast, radio, floatText, blip, gainXP, $, camera, car, addTraffic, crash, traffic: () => traffic,
+    boss = createBoss({ damage, faces: FACES, noCut: () => !!window.__game?.manual, scene, P, LANES, ROAD_HALF, world, frame, carGround, puff, toast, radio, floatText, blip, gainXP, $, camera, car, addTraffic, crash, traffic: () => traffic,
       addPuddle: (q) => PUDDLES.push(q), removePuddle: (q) => { const i = PUDDLES.indexOf(q); if (i >= 0) PUDDLES.splice(i, 1); },
       addDoge: (n) => { n = Math.max(n, -save.doge); save.doge += n; stats.dogeGain += n; writeSaveSoon(); } }, ST.boss, trafficProtos, ST.bossOpts);
   } catch (e) { console.warn('boss skipped', e); boss = null; }
@@ -2139,7 +2157,7 @@ async function boot() {
 stageUI();
 document.fonts?.ready.then(() => setTimeout(boot, 30)) ?? setTimeout(boot, 30);
 requestAnimationFrame(loop);
-window.__game = { gripLimit, ST, get boss() { return boss; }, get pickups() { return pickups; }, get traffic() { return traffic; }, P, get state() { return state; }, input, scene, camera, car, THREE, realcars: { loadCar, instance, CARS }, models: { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100 },
+window.__game = { gripLimit, save, ST, get boss() { return boss; }, get pickups() { return pickups; }, get traffic() { return traffic; }, P, get state() { return state; }, input, scene, camera, car, THREE, realcars: { loadCar, instance, CARS }, models: { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100 },
   gunDbg: () => ({ heat: P.heat, over: P.overheat, me: world(P.s, P.d, P.y + 1).toArray(), targets: gunTargets().map((t) => t.pos.toArray()), live: gunShots.filter((x) => x.live).length }),
   freeze(on) { this.frozen = on; }, skipCount() { countdown = 0.01; }, snap() { snapCam = true; }, pcam: PCAM, get stage() { return ST; }, renderer, step: (dt) => step(dt),
   // for the autopilot that measures clean-run times: with manual set, only step() advances the race

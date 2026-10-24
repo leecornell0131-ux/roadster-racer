@@ -309,6 +309,30 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
   #credits { max-width: 30vw; font-size: 6px; opacity: .3; }
   #mapInfo { font-size: 9.5px; } #mapPct { font-size: 12px; } #mapProg { margin-bottom: 5px; }
 }
+
+/* boss entrance cutscene */
+#cine { position: fixed; inset: 0; pointer-events: auto; cursor: pointer; }
+#cine::before, #cine::after { content: ''; position: absolute; left: 0; right: 0; height: 11vh; background: #000; animation: cineBar .6s ease-out both; }
+#cine::before { top: 0; } #cine::after { bottom: 0; transform-origin: bottom; }
+@keyframes cineBar { from { transform: scaleY(0); } }
+#cine::before { transform-origin: top; }
+body.cine #hud > *:not(#flash) { opacity: 0 !important; pointer-events: none; transition: opacity .3s; }
+#cineCard { position: absolute; left: 6vw; top: 18vh; opacity: 0; transform: translateX(-40px); transition: opacity .5s, transform .6s cubic-bezier(.2,.8,.2,1); }
+#cineCard.show { opacity: 1; transform: none; }
+#cineCard .eb { font: 900 11px var(--f-body); letter-spacing: .4em; color: #ff3d50; text-shadow: 0 0 12px #ff2a3a; }
+#cineName { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 6px; }
+#cineName img { width: 64px; height: 64px; border-radius: 50%; border: 3px solid #ff3d6e; object-fit: cover; background: #1a1020; }
+#cineName span { font: 400 clamp(26px, 5vw, 54px) var(--f-display); color: #fff; letter-spacing: .03em; text-shadow: 0 0 22px rgba(255, 42, 58, .8), 0 3px 0 #000; }
+#cineName small { flex-basis: 100%; font: 700 13px var(--f-body); color: #ffd0d6; opacity: .9; }
+#cineSub { position: absolute; left: 50%; bottom: calc(11vh + 14px); transform: translate(-50%, 10px); width: min(760px, 86vw); display: flex; gap: 12px; align-items: center; padding: 10px 16px; background: rgba(6, 4, 14, .72); border: 1px solid rgba(255, 61, 80, .55); border-radius: 12px; opacity: 0; transition: opacity .25s, transform .25s; }
+#cineSub.hero { border-color: rgba(56, 245, 255, .55); }
+#cineSub.show { opacity: 1; transform: translate(-50%, 0); }
+#cineAva { flex: none; width: 46px; height: 46px; border-radius: 50%; border: 2px solid #fff; background: #333 center / 150% no-repeat; display: grid; place-items: center; font: 400 13px var(--f-display); color: #fff; }
+#cineWho { display: block; font: 900 12px var(--f-body); color: #ff6a78; }
+#cineSub.hero #cineWho { color: var(--neon); }
+#cineTxt { font: 600 15px/1.45 var(--f-body); color: #fff; }
+#cineSkip { position: absolute; right: 18px; top: calc(11vh + 12px); font: 700 12px var(--f-body); color: #fff; background: rgba(0, 0, 0, .5); border: 1px solid rgba(255, 255, 255, .4); border-radius: 20px; padding: 6px 14px; }
+.touch #cineName img { width: 40px; height: 40px; } .touch #cineTxt { font-size: 12.5px; } .touch #cineAva { width: 34px; height: 34px; } .touch #cineCard { top: 15vh; }
 </style>
 </head>
 <body>
@@ -373,6 +397,11 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
   <div class="btn b-jump" data-key="jump"><div>점프<span>꾹 = 사뿐 착지</span></div></div>
 </div>
 
+<div id="cine" hidden>
+  <div id="cineCard"><div class="eb">WARNING · BOSS</div><div id="cineName"></div></div>
+  <div id="cineSub"><div id="cineAva"></div><div><span id="cineWho"></span><span id="cineTxt"></span></div></div>
+  <button id="cineSkip" type="button">건너뛰기 ▸▸</button>
+</div>
 <div id="pause" hidden>
   <div class="rcard panel">
     <div class="eyebrow">PAUSED</div>
