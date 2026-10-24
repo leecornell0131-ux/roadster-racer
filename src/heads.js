@@ -8,7 +8,7 @@ import { failed } from './props.js';
 export const HEADS = {
   elon: { file: 'h_elon', yaw: 0, credit: 'Elon Musk face 3d — riccardogiorato' },
   trump: { file: 'h_trump', yaw: 0, credit: 'Donald Trump Head — Freegives' },
-  zuck: { file: 'h_zuck', yaw: 0, keep: /Head|hair/i, crop: { y: [0.22, 1] }, hair: [/hair/i, 0.8, 0.92], credit: 'Mark Zuckerberg Low Poly — Vadim Fedenko' },
+  zuck: { file: 'h_zuck', yaw: 0, keep: /Head|hair/i, crop: { y: [0.22, 1] }, hair: [/hair/i, 0.8, 0.92, 0.6], credit: 'Mark Zuckerberg Low Poly — Vadim Fedenko' },
   bezos: { file: 'h_bezos', yaw: 0, crop: { y: [0.28, 1] }, credit: 'Jeff Bezos — EntropyNine' },
   biden: { file: 'h_biden', yaw: 0, keep: /AvatarHead|Hair|Brow/i, credit: 'JOE BIDEN — M.H6LL ENTERAR/VR' },
   obama: { file: 'h_obama', yaw: -Math.PI / 2 + 0.35, dropDark: 0.07, tint: '#e0a682', credit: 'BARACK OBAMA — LOUIS' },
@@ -73,6 +73,13 @@ function normalise(name, gltf) {
     const box = new THREE.Box3(); for (const p of parts) if (!cfg.hair[0].test(p.mat?.name || '')) { p.g.computeBoundingBox(); box.union(p.g.boundingBox); }
     const c = box.getCenter(new THREE.Vector3());
     for (const p of parts) if (cfg.hair[0].test(p.mat?.name || '')) p.g.translate(-c.x, -box.max.y, -c.z).scale(cfg.hair[1], cfg.hair[2], cfg.hair[1]).translate(c.x, box.max.y, c.z);
+    // optional 4th entry: cut hair cards hanging below that fraction of the head's height (side flaps past the ears)
+    if (cfg.hair[3]) for (const p of parts) if (cfg.hair[0].test(p.mat?.name || '')) {
+      if (p.g.index) p.g = p.g.toNonIndexed();
+      const cut = box.min.y + cfg.hair[3] * (box.max.y - box.min.y), pos = p.g.getAttribute('position'), keep = [];
+      for (let i = 0; i < pos.count; i += 3) if ((pos.getY(i) + pos.getY(i + 1) + pos.getY(i + 2)) / 3 > cut) keep.push(i, i + 1, i + 2);
+      for (const [k, a] of Object.entries(p.g.attributes)) { const f = new a.array.constructor(keep.length * a.itemSize); keep.forEach((v, j) => { for (let q = 0; q < a.itemSize; q++) f[j * a.itemSize + q] = a.array[v * a.itemSize + q]; }); p.g.setAttribute(k, new THREE.BufferAttribute(f, a.itemSize, a.normalized)); }
+    }
   }
   const inner = new THREE.Group();
   for (const { g, mat } of parts) {
