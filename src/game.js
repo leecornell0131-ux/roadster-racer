@@ -64,7 +64,7 @@ const SAVE_KEY = 'roadster-racer-save-v1';
 const save = loadSave();
 function loadSave() {
   // camp: per event key ('austin:deliver') { done, stars, best, score, play (seconds actually played), tries }
-  const base = () => ({ level: 1, xp: 0, doge: 0, best: 0, bests: {}, camp: {}, play: 0, hp: 100, parts: 3, partsT: Date.now(), up: { magnet: 0, tank: 0, comp: 0, motor: 0, armor: 0, optimus: 0 } });
+  const base = () => ({ level: 1, xp: 0, doge: 0, best: 0, bests: {}, camp: {}, eggs: {}, ach: {}, play: 0, hp: 100, parts: 3, partsT: Date.now(), up: { magnet: 0, tank: 0, comp: 0, motor: 0, armor: 0, optimus: 0 } });
   try {
     const s = Object.assign(base(), JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); s.up = Object.assign(base().up, s.up);
     if (s.best && !s.bests.austin) s.bests.austin = s.best; // v1 saves kept one best time (Austin)
@@ -603,6 +603,7 @@ const PICK = {
   legend: { r: 2.2, xp: 200, label: '전설의 블랙웰 칩 +200 EXP' },
   air: { r: 1.6 },
   wrench: { r: 1.8 },
+  egg: { r: 2.2 },
 };
 const pickupProtos = (() => {
   const coinFace = textTex('Ð', '#6b4300', { w: 128, h: 128, size: 100, glow: 0, bg: '#ffc83d' });
@@ -622,7 +623,11 @@ const pickupProtos = (() => {
   for (const y of [-0.75, 0.75]) { const head = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.1, 8, 16, Math.PI * 1.5), steel); head.position.y = y; head.rotation.z = y > 0 ? -Math.PI * 0.25 : Math.PI * 0.75; wrench.add(head); }
   const halo = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.05, 6, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 1.4, 0.3), toneMapped: false })); wrench.add(halo);
   wrench.rotation.z = 0.5;
-  return { coin, gpu, h100, legend, air, wrench };
+  // easter egg: a slowly turning purple-gold crystal with a halo; one of a kind per spot
+  const egg = new THREE.Group();
+  egg.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.85, 0), new THREE.MeshPhysicalMaterial({ color: '#c79bff', metalness: 0.3, roughness: 0.08, transmission: 0.4, thickness: 0.6, emissive: '#6a2cff', emissiveIntensity: 0.9, clearcoat: 1 })));
+  const eh = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.05, 6, 40), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 1.8, 0.4), toneMapped: false })); eh.rotation.x = Math.PI / 2; egg.add(eh);
+  return { coin, gpu, h100, legend, air, wrench, egg };
 })();
 
 // ---------- particles ----------
@@ -711,7 +716,7 @@ function resetRace() {
   Object.assign(P, { s: 0, d: 3, y: 0, v: 0, vy: 0, grounded: true, charges: maxCharges(), recharge: 0, fuel: AIR_FUEL, slope: 0, air: 0, boostT: 0, boostG: 30, crashT: 0, shake: 0, steerVis: 0, roll: 0, rollTo: 0, rollDir: 1, finished: false, coil: 0, bonkT: 0, roofRun: 0, lastG: 0, kG: 0, slipT: 0, slipV: 0, heat: 0, overheat: 0, launchT: 0, t100: 0, cp: 0, cpI: 0, combo: 0, comboT: 0, comboBest: 0, score: 0, lastThrust: -9, nearMiss: 0 });
   boss?.reset(); for (const sh of gunShots) sh.m.visible = sh.live = false;
   raceT = 0; penalty = 0; swarmDone = false;
-  Object.assign(stats, { perfect: 0, good: 0, coins: 0, xpGain: 0, dogeGain: 0, jumpsOver: 0, roofs: 0, nearMiss: 0, crashes: 0, falls: 0, damage: 0, parts: 0 });
+  Object.assign(stats, { perfect: 0, good: 0, coins: 0, xpGain: 0, dogeGain: 0, jumpsOver: 0, roofs: 0, nearMiss: 0, crashes: 0, falls: 0, damage: 0, parts: 0, detours: 0, lines: 0, eggs: 0 });
   radioFlags.clear(); radioQueue.length = 0;
   for (const t of traffic) if (t.mesh) scene.remove(t.mesh);
   for (const f of jamFleets) scene.remove(f);
@@ -844,6 +849,8 @@ function spawnPickups() {
   for (let s = 700; s < FINISH_S - 200; s += 1100 + Math.random() * 300) if (!nearGap(s)) addPickup('wrench', s, LANES[Math.random() < 0.5 ? 0 : LANES.length - 1], 1.3);
   if (ST.legend) addPickup('legend', ST.legend.s, ST.legend.d, ST.legend.y);   // only reachable with ramp + jump
   for (const [type, ps, pd, py] of ST.pickups || []) addPickup(type, ps, pd, py);
+  // easter eggs for this event that haven't been found yet
+  for (const e of BASE.eggs || []) if (e.ev === EV.id && !save.eggs[e.id]) { addPickup('egg', e.s, e.d, e.y ?? 1.4); pickups[pickups.length - 1].egg = e; }
   // coin arcs over gaps
   for (const g of GAPS) for (let i = 0; i < 9; i++) { const s = g.s0 - 4 + i * 5.2, x = (s - (g.s0 - 4)) / 42; addPickup('coin', s, 0, 3 + 7 * Math.sin(Math.PI * x)); }
 }
@@ -1134,7 +1141,7 @@ const COMBO_T = 3.2;
 const comboMult = () => (P.combo >= 9 ? 5 : P.combo >= 6 ? 4 : P.combo >= 4 ? 3 : P.combo >= 2 ? 2 : 1);
 function trick(name, pts, quiet) {
   P.combo++; P.comboT = COMBO_T;
-  const m = comboMult(), got = Math.round(pts * m); P.score += got; P.comboBest = Math.max(P.comboBest, m);
+  const m = comboMult(), got = Math.round(pts * m); P.score += got; P.comboBest = Math.max(P.comboBest, m); if (m >= 5) unlockAch('combo5');
   hud.comboName.textContent = `${name} +${got.toLocaleString()}`;
   hud.combo.classList.toggle('hot', m >= 3);
   if (!quiet || P.combo % 5 === 0) { hud.combo.classList.remove('pop'); void hud.combo.offsetWidth; hud.combo.classList.add('pop'); }
@@ -1339,7 +1346,7 @@ function step(dt) {
   if (P.v > vmax) acc = -12;
   // launch: the cold-gas thrusters fire with the motors, 0-100 km/h (as the HUD shows it) in about 1.1 s
   if (P.launchT > 0) { P.launchT -= dt; acc = Math.max(acc, 23.5); }
-  if (!P.t100 && P.v * 3.6 * 1.1 >= 100) { P.t100 = raceT; if (raceT < 2) floatText(`0→100km/h ${raceT.toFixed(2)}초 · 콜드가스 스러스터`); }
+  if (!P.t100 && P.v * 3.6 * 1.1 >= 100) { P.t100 = raceT; if (raceT < 1.2) unlockAch('launch'); if (raceT < 2) floatText(`0→100km/h ${raceT.toFixed(2)}초 · 콜드가스 스러스터`); }
   if (P.crashT > 0) { P.crashT -= dt; acc *= 0.3; }
   if (input.brake && P.grounded) acc = -42;
   P.v = Math.max(0, P.v + acc * dt);
@@ -1371,7 +1378,7 @@ function step(dt) {
   const fk = forkAt(P.s);
   if (fk) {
     const sd = fk.side, inGap = P.s > fk.s0 && P.s < fk.s1;
-    if (inGap && P.forkId !== fk.id) { P.forkId = fk.id; P.branch = P.d * sd > ROAD_HALF; if (P.branch) { toast('우회로', `합류까지 ${(fk.s1 - P.s) | 0}m 돌아가요`, '#ffc83d'); P.forkLost = 0; } else trick('정확한 진입', 120); }
+    if (inGap && P.forkId !== fk.id) { P.forkId = fk.id; P.branch = P.d * sd > ROAD_HALF; if (P.branch) { toast('우회로', `합류까지 ${(fk.s1 - P.s) | 0}m 돌아가요`, '#ffc83d'); stats.detours = (stats.detours || 0) + 1; } else { trick('정확한 진입', 120); if ((stats.lines = (stats.lines || 0) + 1) >= 3) unlockAch('line3'); } }
     if (!inGap) P.branch = false;
     if (P.branch) {
       P.d += sd * (fk.gap(P.s + P.v * dt / stretch) - fk.gap(P.s)); // the lane carries you out and back
@@ -1581,7 +1588,7 @@ function land(g) {
   let grade = 'small';
   if (P.air > 0.45 && impact < 11.5) {
     if (raceT - P.lastThrust < PERFECT_WINDOW) {
-      grade = 'perfect'; stats.perfect++; haptic('perfect'); P.boostT = Math.max(P.boostT, 1.0); P.boostG = Math.min(100, P.boostG + 25);
+      grade = 'perfect'; stats.perfect++; haptic('perfect'); unlockAch('perfect1'); P.boostT = Math.max(P.boostT, 1.0); P.boostG = Math.min(100, P.boostG + 25);
       toast('PERFECT LANDING!', '속도 부스트 · 부스트 게이지 +25', '#38f5ff'); gainXP(5); trick('퍼펙트 착지', 150);
       blip(523, 1046, 0.18, 'triangle', 0.13); setTimeout(() => blip(659, 1318, 0.18, 'triangle', 0.12), 70); setTimeout(() => blip(784, 1568, 0.3, 'triangle', 0.12), 140);
       flash('rgba(120, 240, 255, .35)');
@@ -1646,7 +1653,34 @@ function collect(p) {
     case 'air': P.charges = Math.min(maxCharges(), P.charges + 1); P.fuel = AIR_FUEL; floatText('압축공기 +1'); blip(300, 900, 0.18, 'sine', 0.12); break;
     default: if (boss?.B.active) P.coil = Math.min(100, P.coil + (p.type === 'gpu' ? 22 : 40)); gainXP(PICK[p.type].xp, PICK[p.type].label); blip(660, 1320, 0.16, 'triangle', 0.14);
       if (p.type === 'legend') { toast('전설의 블랙웰 칩!', '+200 EXP', '#b07dff'); radio('그거 젠슨이 찾고 있던 건데… 우리가 가져가자.'); }
+      break;
+    case 'egg': {
+      const e = p.egg; save.eggs[e.id] = Date.now(); writeSave(); stats.eggs = (stats.eggs || 0) + 1;
+      toast('이스터에그 발견!', e.name, '#b07dff'); haptic('perfect'); unlockAch('egg1'); flash('rgba(176, 125, 255, .35)'); gainXP(30);
+      if (e.line) radio(e.line, e.who);
+      blip(523, 1568, 0.4, 'triangle', 0.14); trick('이스터에그', 300);
+    }
   }
+}
+// ---------- achievements ----------
+// across the whole game; some unlock mid-run (unlockAch), the rest are checked at the finish line
+const ACH = [
+  { id: 'perfect1', name: '사뿐히', desc: '첫 퍼펙트 착지' },
+  { id: 'combo5', name: '콤보 장인', desc: '콤보 ×5' },
+  { id: 'launch', name: '제로백 1초', desc: '출발 0→100km/h 1.2초 안에' },
+  { id: 'clean', name: '무사고 운전', desc: '충돌·추락 없이 완주' },
+  { id: 'detour', name: '경로 재탐색 장인', desc: '우회로로 돌아서도 통과' },
+  { id: 'line3', name: '인코스의 신', desc: '한 판에 갈림길 정확한 진입 3번' },
+  { id: 'onfire', name: '불타는 로드스터', desc: '배터리 화재 상태로 결승 통과' },
+  { id: 'egg1', name: '오스틴은 이상해', desc: '이스터에그 첫 발견' },
+  { id: 'roof10', name: '지붕 위의 질주', desc: '한 판에 차 지붕 10대 밟기' },
+  { id: 'boss', name: '로보택시 해방', desc: '보스 첫 격추' },
+];
+function unlockAch(id) {
+  if (save.ach[id]) return;
+  const a = ACH.find((x) => x.id === id); if (!a) return;
+  save.ach[id] = Date.now(); writeSaveSoon();
+  setTimeout(() => { toast(`업적: ${a.name}`, a.desc, '#ffc83d'); blip(784, 1568, 0.3, 'triangle', 0.12); }, 700);
 }
 function finish() {
   P.finished = true; state = 'finish';
@@ -1655,6 +1689,14 @@ function finish() {
   const run = { t, perfect: stats.perfect, score: P.score, crashes: stats.crashes, falls: stats.falls };
   const res = mission.result(run);
   const nStars = res.stars.filter((x) => x.ok).length;
+  const pct0 = mapPct(BASE), open0 = ORDER.map((st, si) => stageOpen(si));
+  if (res.pass) {
+    if (!stats.crashes && !stats.falls) unlockAch('clean');
+    if (stats.detours) unlockAch('detour');
+    if (hpZone() === 'red') unlockAch('onfire');
+    if (boss?.B.defeated) unlockAch('boss');
+  }
+  if (stats.roofs >= 10) unlockAch('roof10');
   const rec = save.camp[ST.evKey] ??= { done: false, stars: 0, best: 0, score: 0, play: 0, tries: 0 };
   const firstClear = res.pass && !rec.done;
   const partsWon = res.pass ? (firstClear ? 2 : 1) : 0; save.parts = Math.min(PART_MAX, save.parts + partsWon);
@@ -1687,7 +1729,8 @@ function finish() {
     if (nxt) { $('nextBtn').textContent = `다음: ${nxt.short} →`; $('nextBtn').onclick = () => goStage(nxt.stage, nxt.i); }
     $('againBtn').textContent = res.pass ? '다시 달리기' : '다시 도전';
     $('againBtn').classList.toggle('go', !res.pass); $('againBtn').classList.toggle('ghost', res.pass);
-    $('rNext').textContent = firstClear && nxt ? `새로 열림: ${nxt.label}` : '';
+    const pct1 = mapPct(BASE), newly = ORDER.find((st, si) => stageOpen(si) && !open0[si]);
+    $('rNext').textContent = `${BASE.name} 진행도 ${pct0}% → ${pct1}%` + (newly ? ` · 새 지역 열림: ${newly.name}!` : pct1 < UNLOCK_PCT && ORDER[ORDER.indexOf(BASE) + 1] ? ` · ${UNLOCK_PCT}%면 다음 지역` : '');
     $('results').hidden = false;
   }, ST.finishDelay ?? 900);
 }
@@ -1847,7 +1890,34 @@ function refreshSaveLine() { grantParts(); const b = save.camp[ST.evKey]?.best |
 const CAMPAIGN = ORDER.flatMap((st, si) => (st.events || [{ id: 'run', name: st.name }]).map((e, i) => ({ st, si, e, i, key: `${st.id}:${e.id}` })));
 const UNLOCK_ALL = new URLSearchParams(location.search).has('unlock');
 const isDone = (k) => !!save.camp[CAMPAIGN[k].key]?.done || (CAMPAIGN[k].e.id === 'run' && !!save.bests[CAMPAIGN[k].st.id]);
-const isOpen = (k) => UNLOCK_ALL || k === 0 || isDone(k) || isDone(k - 1);
+// map progress: each event is worth 4 (clear + 3 stars), each easter egg 1. A region opens when the one
+// before it reaches UNLOCK_PCT (one-run regions: when that run is cleared). Inside a region the tutorial
+// comes first, then every destination is open to pick from; the boss opens after two of them.
+const UNLOCK_PCT = 60;
+function mapUnits(st) {
+  const evs = st.events || [{ id: 'run' }];
+  let got = 0, all = evs.length * 4 + (st.eggs?.length || 0);
+  for (const e of evs) { const r = save.camp[`${st.id}:${e.id}`]; if (r?.done) got += 1 + (r.stars || 0); else if (e.id === 'run' && save.bests[st.id]) got += 1; }
+  for (const e of st.eggs || []) if (save.eggs[e.id]) got++;
+  return { got, all };
+}
+const mapPct = (st) => { const u = mapUnits(st); return Math.round(100 * u.got / u.all); };
+function stageOpen(si) {
+  if (UNLOCK_ALL || si === 0) return true;
+  const prev = ORDER[si - 1];
+  if (!prev.events || prev.events.length < 2) return CAMPAIGN.some((c, k) => c.st === prev && isDone(k));
+  return mapPct(prev) >= UNLOCK_PCT;
+}
+function isOpen(k) {
+  const c = CAMPAIGN[k];
+  if (UNLOCK_ALL || isDone(k)) return true;
+  if (!stageOpen(c.si)) return false;
+  const evs = c.st.events; if (!evs || evs.length < 2 || c.i === 0) return true;
+  const ks = CAMPAIGN.map((x, j) => j).filter((j) => CAMPAIGN[j].st === c.st);
+  if (!isDone(ks[0])) return false; // tutorial first
+  if (c.e.mission?.type === 'boss') return ks.filter((j) => j !== k && j !== ks[0] && isDone(j)).length >= 2;
+  return true;
+}
 const curK = CAMPAIGN.findIndex((c) => c.key === ST.evKey);
 const label = (c) => (c.st.events ? `${c.st.name} · ${c.e.name}` : c.st.name);
 function nextEvent() {
@@ -1860,8 +1930,8 @@ function renderCampaign() {
   // region chips: progress per region
   $('stagePick').innerHTML = ORDER.map((st, si) => {
     const ks = CAMPAIGN.map((c, k) => k).filter((k) => CAMPAIGN[k].si === si);
-    const open = ks.some(isOpen), done = ks.filter(isDone).length;
-    return `<button type="button" class="chip${st === BASE ? ' on' : ''}${open ? '' : ' locked'}" data-stage="${st.id}" ${open ? '' : 'disabled'}>${String(st.num).padStart(2, '0')} ${st.name}${ks.length > 1 ? ` <small>${done}/${ks.length}</small>` : ''}</button>`;
+    const open = stageOpen(si), pct = mapPct(st);
+    return `<button type="button" class="chip${st === BASE ? ' on' : ''}${open ? '' : ' locked'}" data-stage="${st.id}" ${open ? '' : 'disabled'}>${String(st.num).padStart(2, '0')} ${st.name}${open && pct ? ` <small>${pct}%</small>` : ''}</button>`;
   }).join('');
   $('stagePick').onclick = (e) => { const id = e.target.closest('[data-stage]:not([disabled])')?.dataset.stage; if (!id || id === BASE.id) return; const st = STAGES[id]; const ks = CAMPAIGN.map((c, k) => k).filter((k) => CAMPAIGN[k].st === st); const k = ks.find((x) => isOpen(x) && !isDone(x)) ?? ks[0]; goStage(id, CAMPAIGN[k].i); };
   // this region's events
@@ -1879,8 +1949,13 @@ function renderCampaign() {
   const cont = CAMPAIGN[ck];
   $('contBtn').hidden = !cont || cont.key === ST.evKey;
   if (cont) { $('contBtn').textContent = `이어하기: ${label(cont)}`; $('contBtn').onclick = () => goStage(cont.st.id, cont.i); }
-  const doneN = CAMPAIGN.filter((c, k) => isDone(k)).length;
-  $('campLine').textContent = `캠페인 ${doneN}/${CAMPAIGN.length} · 플레이 ${fmtPlay(save.play || 0)}`;
+  const u = mapUnits(BASE), pct = mapPct(BASE), eggs = (BASE.eggs || []).filter((e) => save.eggs[e.id]).length, si = ORDER.indexOf(BASE), nextSt = ORDER[si + 1];
+  $('mapProg').hidden = false;
+  $('mapPct').textContent = `${pct}%`; $('mapBar').style.width = `${pct}%`; $('mapBar').parentElement.style.setProperty('--gate', `${UNLOCK_PCT}%`);
+  $('mapInfo').textContent = `${BASE.name} 진행도 · 별 ${u.got - eggs}/${u.all - (BASE.eggs?.length || 0)}${BASE.eggs?.length ? ` · 이스터에그 ${eggs}/${BASE.eggs.length}` : ''}` + (nextSt ? (stageOpen(si + 1) ? ` · ${nextSt.name} 열림` : ` · ${UNLOCK_PCT}%면 ${nextSt.name} 열림`) : '');
+  const achN = ACH.filter((a) => save.ach[a.id]).length;
+  $('campLine').textContent = `업적 ${achN}/${ACH.length} · 플레이 ${fmtPlay(save.play || 0)}`;
+  $('campLine').title = ACH.map((a) => `${save.ach[a.id] ? '✓' : '·'} ${a.name}: ${a.desc}`).join('\n');
 }
 // stage texts, event brief
 function stageUI() {

@@ -39,6 +39,13 @@ const more = (mul, extra = {}) => Object.fromEntries(Object.entries(TRAFFIC).map
 export default {
   id: 'austin', num: 1, name: '오스틴',
   roadHalf: ROAD_HALF, lanes: LANES, finish: B_FIN,
+  // easter eggs: one per spot, saved once found; two of them live only on the long way round
+  eggs: [
+    { id: 'au_beer', ev: 'tutorial', s: 1120, d: 10, y: 1.4, name: '사이버 맥주캔', line: '직원 냉장고에서 나온 각진 맥주캔. 따는 데 망치가 필요해.' },
+    { id: 'au_weird', ev: 'deliver', s: 1230, d: 68, y: 1.4, name: 'Keep Austin Weird 벽화 조각', line: '우회로로 온 사람만 보는 오스틴이야. 길 잃는 것도 실력이지.' },
+    { id: 'au_bats', ev: 'stunt', s: 2250, d: 68, y: 1.6, name: '콩그레스 다리 박쥐', line: '150만 마리 중 한 마리가 따라왔어. 이름은 배트모빌로 하자.' },
+    { id: 'au_lens', ev: 'race', s: 544, d: 8.5, y: 5.2, name: '웨이모 라이다 렌즈', line: '경쟁사 라이다 렌즈다. 카메라 여덟 개면 충분한데 말이야.' },
+  ],
   zones: [[-200, 'sixth'], [1500, 'downtown'], [B_BR0, 'river'], [B_BR1, 'capitol']],
   bridge: { b0: B_BR0, b1: B_BR1, g0: B_GAP0, g1: B_GAP1 },
   gaps: [{ s0: B_GAP0, s1: B_GAP1, respawn: B_GAP0 - 150 }],

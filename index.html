@@ -251,6 +251,12 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
 .ev.on { border-color: var(--hot); box-shadow: 0 0 10px rgba(255, 61, 110, .45); }
 .ev.locked { opacity: .45; cursor: not-allowed; }
 .ev:focus-visible { outline: 2px solid var(--neon); outline-offset: 2px; }
+#mapProg { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; align-items: center; max-width: 640px; margin: 0 0 8px; }
+#mapProg .mp { position: relative; height: 7px; border-radius: 4px; background: rgba(255, 255, 255, .14); overflow: visible; }
+#mapProg .mp::after { content: ''; position: absolute; left: var(--gate, 60%); top: -4px; bottom: -4px; width: 2px; background: var(--gold); box-shadow: 0 0 6px var(--gold); }
+#mapBar { display: block; height: 100%; width: 0; border-radius: 4px; background: linear-gradient(90deg, var(--neon), var(--mint)); }
+#mapPct { font: 700 14px var(--f-hud); color: var(--mint); }
+#mapInfo { grid-column: 1 / -1; font: 500 11px var(--f-body); opacity: .75; }
 #campLine { font: 500 12px var(--f-hud); opacity: .7; letter-spacing: .05em; }
 /* objective, prompts, combo, landing cue */
 #mission { position: absolute; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); padding: 6px 14px; font: 700 12.5px var(--f-body); text-align: center; max-width: min(520px, 52vw); }
@@ -295,6 +301,7 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
   <div class="pwrap">
     <div>
       <div class="stagepick" id="stagePick"></div>
+      <div id="mapProg" hidden><div class="mp"><i id="mapBar"></i></div><b id="mapPct"></b><small id="mapInfo"></small></div>
       <div class="evlist" id="evList" hidden></div>
       <div class="eyebrow" id="pEyebrow"></div>
       <div class="ptitle" id="pTitle"></div>
