@@ -8,6 +8,28 @@ import { mergeGeometries, toCreasedNormals } from 'three/addons/utils/BufferGeom
 import { wheel as stockWheel } from './models.js';
 
 const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+// The artifact frame's CSP blocks fetch() of data: and blob: URLs, which is how GLTFLoader reads embedded
+// buffers and textures. Decode them here instead: base64 -> bytes, image bytes -> createImageBitmap.
+const bytes = (uri) => { const b = atob(uri.slice(uri.indexOf(',') + 1)), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
+const mime = (uri) => uri.slice(5, uri.indexOf(';'));
+loader.register((parser) => {
+  const loadBuffer = parser.loadBuffer.bind(parser);
+  parser.loadBuffer = (i) => { const uri = parser.json.buffers[i].uri; return uri?.startsWith('data:') ? Promise.resolve(bytes(uri).buffer) : loadBuffer(i); };
+  // images live in bufferViews; GLTFLoader would hand them to a loader as blob: URLs
+  const loadImageSource = parser.loadImageSource.bind(parser);
+  if (typeof createImageBitmap !== 'undefined') parser.loadImageSource = (i, ldr) => {
+    const def = parser.json.images[i];
+    if (def.bufferView === undefined && !def.uri?.startsWith('data:')) return loadImageSource(i, ldr);
+    if (!parser.sourceCache[i]) parser.sourceCache[i] = (def.bufferView !== undefined ? parser.getDependency('bufferView', def.bufferView) : Promise.resolve(bytes(def.uri)))
+      .then((buf) => createImageBitmap(new Blob([buf], { type: def.mimeType || mime(def.uri) }), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }))
+      .then((bmp) => { const t = new THREE.Texture(bmp); t.needsUpdate = true; t.userData.mimeType = def.mimeType; return t; });
+    return parser.sourceCache[i].then((t) => t.clone());
+  };
+  // the webp probe loads a data: image, which the CSP may also block; every browser we target decodes webp
+  const setPlugins = parser.setPlugins.bind(parser);
+  parser.setPlugins = (pl) => { if (pl.EXT_texture_webp) pl.EXT_texture_webp.isSupported = Promise.resolve(true); setPlugins(pl); };
+  return { name: 'inline_data_uris' };
+});
 
 export async function loadGltfJson(url) {
   const res = await fetch(url);

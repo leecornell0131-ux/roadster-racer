@@ -20,6 +20,7 @@ export const PROPS = {
 
 const cache = new Map();
 export const loaded = {};
+export const failed = []; // names + reasons, shown in the credits line so a broken load is visible on the page
 
 function normalise(name, scene) {
   const cfg = PROPS[name];
@@ -41,7 +42,7 @@ function normalise(name, scene) {
 
 export function loadProps(names = []) {
   return Promise.all(names.map((n) => {
-    if (!cache.has(n)) cache.set(n, loadGltfJson(`assets/props/${n}.json`).then((gl) => (loaded[n] = normalise(n, gl.scene))).catch((e) => { console.warn('prop failed', n, e); return null; }));
+    if (!cache.has(n)) cache.set(n, loadGltfJson(`assets/props/${n}.json`).then((gl) => (loaded[n] = normalise(n, gl.scene))).catch((e) => { console.warn('prop failed', n, e); failed.push(n + ': ' + String(e?.message || e).replace(/data:[^,]*,[A-Za-z0-9+/=]+/g, 'data-uri').slice(0, 90)); return null; }));
     return cache.get(n);
   })).then(() => loaded);
 }

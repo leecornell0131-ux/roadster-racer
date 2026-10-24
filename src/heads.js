@@ -3,6 +3,7 @@
 // normalised: 1 unit tall, centred on the origin, face looking along +z (towards the chasing car).
 import * as THREE from 'three';
 import { loadGltfJson } from './realcars.js';
+import { failed } from './props.js';
 
 export const HEADS = {
   elon: { file: 'h_elon', yaw: 0, credit: 'Elon Musk face 3d — riccardogiorato' },
@@ -89,7 +90,7 @@ function normalise(name, gltf) {
 
 export function loadHeads(names = Object.keys(HEADS)) {
   return Promise.all(names.map((n) => {
-    if (!cache.has(n)) cache.set(n, loadGltfJson(`assets/props/${HEADS[n].file}.json`).then((gl) => (heads[n] = normalise(n, gl))).catch((e) => { console.warn('head failed', n, e); return null; }));
+    if (!cache.has(n)) cache.set(n, loadGltfJson(`assets/props/${HEADS[n].file}.json`).then((gl) => (heads[n] = normalise(n, gl))).catch((e) => { console.warn('head failed', n, e); failed.push(n + ': ' + String(e?.message || e).replace(/data:[^,]*,[A-Za-z0-9+/=]+/g, 'data-uri').slice(0, 90)); return null; }));
     return cache.get(n);
   })).then(() => heads);
 }
