@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { bigTurns, rampRun, CITY_ROAD } from './city.js';
 
 const ROAD_HALF = 12;
 const FINISH_S = 3150;
@@ -19,6 +20,14 @@ function elev(s) { return HILL_H * THREE.MathUtils.smoothstep(s, HILL[0], HILL[1
 
 export default {
   id: 'dc', num: 5, name: '워싱턴 DC',
+  city: 'dc',
+  eggs: [
+    { id: 'dc_gavel', ev: 'mall', place: 'Supreme Court of the United States', y: 1.6, name: '대법원 의사봉', line: '판결: 로드스터는 도로 위에서도 날 수 있다. 9대 0.' },
+    { id: 'dc_rocket', ev: 'mall', place: 'National Air and Space Museum', y: 1.6, name: '아폴로 볼트 하나', line: '항공우주박물관에서 굴러 나온 볼트. 우리가 화성 가면 돌려줄게.' },
+    { id: 'dc_spy', ev: 'penn', fork: 0, y: 1.4, name: '스파이 박물관 도청기', line: '도청기 발견. 웨이모가 우리 경로를 엿듣고 있었어.' },
+    { id: 'dc_seal', ev: 'motorcade', s: 700, d: 9, y: 1.4, name: '대통령 인장 스티커', line: '가짜 대통령 인장이야. 붙이면 경호 차량이 길을 비켜 줄지도?' },
+    { id: 'dc_scoop', ev: 'boss', s: 1500, d: -9, y: 1.4, name: '규제맛 아이스크림 한 스쿱', line: '맛은 서류 맛. 유통기한은 1972년.' },
+  ],
   roadHalf: ROAD_HALF, lanes: [-9, -3, 3, 9], finish: FINISH_S,
   gaps: [],
   elev,
@@ -80,6 +89,65 @@ export default {
     meta: '오전 9:41 · 워싱턴 DC · 리트윗 150만', load: '규제 서류 3만 장 인쇄 중 · 벚꽃 피우는 중',
     hud: 'STAGE 5 · WASHINGTON D.C.', clear: 'STAGE 05 CLEAR', clearTitle: '규제 돌파',
   },
+  // chapter 5: three runs on real Washington streets (OpenStreetMap), then the original Constitution Ave boss run
+  events: [
+    {
+      id: 'mall', name: '내셔널 몰 배송', ...CITY_ROAD,
+      brief: '<b>배송</b> 진짜 워싱턴 지도예요. 유니언 역에서 대법원, 내셔널 갤러리, 항공우주박물관을 거쳐 백악관 옆 윌라드 호텔까지. 초록 정차 구역에서 <b>↓ 브레이크</b>.',
+      route: { from: 'Washington Union Station', via: ['Supreme Court of the United States', 'National Gallery of Art', 'National Air and Space Museum'], to: 'Willard InterContinental Hotel' },
+      elev: null, cx: null, legend: null, pickups: [], gaps: [], jams: [], boss: null, trafficMaxS: 9000,
+      forks: (L, R) => bigTurns(R, 1).map((t) => ({ at: t.s, name: '정상 경로' })),
+      ramps: (L) => rampRun(380, L - 200, 300, 3),
+      mission: { type: 'deliver', time: 170, allowMiss: 1, stops: [
+        { place: 'Supreme Court of the United States', name: '대법원', thanks: '변론 시작 전이에요!', line: '대법관 한 분 내렸어. 자율주행 판결 날이래.' },
+        { place: 'National Gallery of Art', name: '내셔널 갤러리', thanks: '전시 오픈 맞췄어요' },
+        { place: 'National Air and Space Museum', name: '항공우주박물관', thanks: '우리 차도 여기 전시돼야 해요', line: '박물관 직원이 우리 차 전시하고 싶대. 아직은 안 돼, 화성 가야 해.' },
+      ] },
+      radio: [[20, '워싱턴 진짜 길이야. 경호 SUV는 급정거하니까 거리 둬.'], [2500, '내셔널 몰이다. 저 멀리 워싱턴 기념탑 보여?']],
+      lines: { finish: '윌라드 호텔 도착. 로비스트들이 우리 차 보고 규제 서류 꺼내는 중이야. 도망가자.', failed: '손님들이 청문회 열겠대… 다시 가자.' },
+      poster: { s: 300, d: -6, y: 0, cam: { back: 10, side: 3, y: 2.6, ahead: 8, lookSide: -3, lookY: 1.4, fov: 46 } },
+      finishText: 'FINISH · 윌라드 호텔',
+      text: { clear: 'DELIVERY DONE', clearTitle: '배송 완료' },
+    },
+    {
+      id: 'penn', name: '포드 극장 스턴트 쇼', ...CITY_ROAD,
+      brief: '<b>스턴트</b> 국립문서보관소에서 포드 극장, 차이나타운을 지나 의사당 앞 유니언 스퀘어까지. 아슬 추월, 배럴롤, 퍼펙트 착지로 <b>콤보 배수</b>. 경호 행렬 정체는 점프대로 지붕 위로.',
+      route: { from: 'U.S. National Archives', via: ["Ford's Theatre", 'Chinatown Park'], to: 'Union Square' },
+      elev: null, cx: null, legend: null, pickups: [], gaps: [], boss: null, trafficMaxS: 9000,
+      forks: (L, R) => bigTurns(R, 1).map((t) => ({ at: t.s, name: '정상 경로' })),
+      ramps: (L) => { const j = [Math.round(L * 0.3) - 40, Math.round(L * 0.66) - 40];
+        return [...rampRun(260, L - 150, 170, 0).filter((r) => j.every((s) => Math.abs(r.s0 - s) > 110)), ...j.map((s0) => ({ s0, len: 18, dL: -12, dR: 12, h: 3.4 }))]; }, // full width: every lane can hop the jam
+      jams: (L) => [[Math.round(L * 0.3), Math.round(L * 0.3) + 150], [Math.round(L * 0.66), Math.round(L * 0.66) + 150]],
+      mission: { type: 'stunt', scores: [7000, 14000, 24000] },
+      radio: [[20, '포드 극장 앞 스턴트 쇼야. 관객석엔 상원의원들. 박수 대신 규제를 칠지도.'], [800, '경호 행렬이다! 검은 SUV 지붕은 원래 공짜 도로야.']],
+      lines: { finish: '의사당 앞 착지 완벽. 이제 경호 차량이랑 한판 붙자.', failed: '박수가 좀 약했어. 콤보를 끊지 말고 이어 봐.' },
+      poster: { s: 400, d: 2, y: 0, cam: { back: 9, side: -4, y: 1.6, ahead: 10, lookSide: -2, lookY: 2.6, fov: 46 } },
+      finishText: 'FINISH · 유니언 스퀘어',
+      text: { clear: 'SHOW TIME', clearTitle: '스턴트 쇼 성공' },
+    },
+    {
+      id: 'motorcade', name: '경호 행렬 레이스', ...CITY_ROAD,
+      brief: '<b>레이스</b> 프리덤 플라자에서 의사당 쪽으로, 경호 SUV 셋과 승부. 경호 차량은 장애물을 보면 급정거해요. 깜빡이 반대쪽으로 추월하고 코너 전에 브레이크.',
+      route: { from: 'Freedom Plaza', via: [[180, -120]], to: [900, 270] },
+      elev: null, cx: null, legend: null, pickups: [], gaps: [], jams: [], boss: null, trafficMaxS: 9000,
+      ramps: (L) => rampRun(300, L - 150, 230, 1),
+      mission: { type: 'rivals', time: 50, perfect: 2, rivals: [
+        { type: 'suv', name: '경호 SUV #1', label: 'SECRET 1', speed: 54, d: -3, s: 24 },
+        { type: 'suv', name: '경호 SUV #2', label: 'SECRET 2', speed: 56, d: 9, s: 30 },
+        { type: 'suv', name: '비스트', label: 'THE BEAST', speed: 58, d: -9, s: 36, tagColor: '#ffc83d' },
+      ] },
+      radio: [[20, '경호 행렬이 우리랑 경주하겠대. 비스트는 장갑차라 무거워. 코너에서 잡아.'], [1200, '이 정도면 경호원들도 사인 받으러 오겠다.']],
+      lines: { finish: '경호 행렬 따돌렸어. 이제 컨스티튜션 애비뉴로. 아이스크림 트럭이 기다려.', failed: '경호 차량한테 졌다고? 코너에서 브레이크를 아껴.' },
+      poster: { s: 400, d: -3, y: 0, cam: { back: 10, side: 3, y: 2.2, ahead: 8, lookSide: -3, lookY: 1.4, fov: 46 } },
+      finishText: 'FINISH · 캐피톨 힐',
+      text: { clear: 'WINNER', clearTitle: '레이스 우승' },
+    },
+    {
+      id: 'boss', name: '컨스티튜션 애비뉴 · 아이스크림 트럭',
+      brief: '<b>보스전</b> 링컨 기념관에서 의사당까지. 아이스크림 조의 트럭과 오바바의 에어포스 원 드론을 <b>F(⚡) 코일</b>과 점프 공격, 트럭 지붕 밟기로 격추해요.',
+      mission: { type: 'boss', time: 66, perfect: 4 },
+    },
+  ],
   build,
   tick,
 };
@@ -147,6 +215,8 @@ function temple(g, { w, dp, h, n, pd = 6, mat = 'marble', ped = true, body = tru
 
 function build(k) {
   MAT = mats(k);
+  // real-map events: OpenStreetMap streets and buildings instead of the hand-made Mall
+  if (k.CITY) { k.buildCity(); k.finishArch(k.ST.finishText || 'FINISH'); return; }
   const rand = rnd(5);
   buildGround(k, rand);
   buildPool(k);
