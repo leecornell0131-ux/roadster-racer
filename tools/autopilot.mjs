@@ -63,6 +63,8 @@ for (const ev of evs) {
         if (!P.grounded) { const gr = g.carGround(P.s, P.d, P.y), fall = -(P.vy - (P.kG || 0) * 0); I.jump = fall > 0 && (P.y - gr) / Math.max(fall, 0.1) < 0.7; } else I.jump = false;
         if (M.type !== 'tutorial' && P.boostG >= 35 && kMax < 0.004 && !I.brake) I.boost = true; else if (M.type !== 'tutorial') I.boost = false;
         if (g.boss?.B.active && B.t > B.fireT) { I.fireEdge = true; B.fireT = B.t + 0.8; }
+        // gun stages: hold fire in bursts so it never overheats
+        if (g.ST?.gun) I.fire = P.overheat <= 0 && P.heat < (I.fire ? 85 : 40);
         g.step(DT);
         I.jumpEdge = false; if (M.type === 'tutorial') I.boost = false;
       }

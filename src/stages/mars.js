@@ -1,6 +1,6 @@
-// Stage 9 (final): Mars. From the landing zone across red dunes, up the flank of Olympus Mons to the
-// caldera rim, down again past dust devils, over a canyon in Valles Marineris country, into the first
-// Mars city. Dust storms roll in and out (visibility). Raptor cannons as on the Moon.
+// Stage 9 (final): Mars. Red dunes, the flank of Olympus Mons, dust devils, canyons in Valles Marineris
+// country, the first Mars city. Dust storms roll in and out (visibility). Raptor cannons as on the Moon.
+// Each event is its own route across the plains; the last one climbs Olympus Mons to the city.
 // Final boss: the AGI Overlord, three tech heads fighting over one GPU mecha.
 // The ending: the city switches on and the camera rises over it.
 import * as THREE from 'three';
@@ -8,62 +8,85 @@ import { prop } from '../props.js';
 import { shipKit } from './starbase.js';
 
 const ROAD_HALF = 12;
-const FINISH_S = 3400;
-const CANYON = [2930, 3000];
-const CITY = { s: 3560, d: 0 };
+const LANES = [-9, -3, 3, 9];
 const sm = THREE.MathUtils.smoothstep;
 
-// Olympus Mons: a long climb (a shield volcano is gentle but endless), a caldera rim with a dip, a descent
-const KEYS = [[-600, 0], [1150, 0], [1880, 58], [1930, 62], [1990, 56], [2060, 60], [2110, 63], [2190, 52], [2700, 4], [2900, 0], [4500, 0]];
-const E0 = -600, EN = 4500;
-const ETAB = (() => {
+// ---------- course factory ----------
+// keys: the road's height profile; dunes: [s0, s1] stretches of short rollers; canyons: breaks with a
+// full-width ramp before each; volcano: where Olympus Mons stands (a broad dome in the terrain);
+// storms: [s0, s1] where the dust closes in; devils: whirlwinds that wander across the lanes
+function areo({ finish, keys, dunes = [], canyons = [], volcano = { s: 2000, d: 900 }, storms = [], devils = [], sway = [60, 600], ramps = [], extra = [], city = false }) {
+  const E0 = -600, EN = finish + 1100;
+  const K = [...keys, [EN, keys.at(-1)[1]]];
   const raw = new Float32Array(EN - E0 + 1);
-  for (let i = 0; i < raw.length; i++) {
-    const s = E0 + i; let k = 0; while (k < KEYS.length - 2 && KEYS[k + 1][0] < s) k++;
-    const [sa, ya] = KEYS[k], [sb, yb] = KEYS[k + 1];
-    const dunes = 1.6 * Math.sin(s / 34) * sm(s, 250, 350) * (1 - sm(s, 950, 1050)) + 1.2 * Math.sin(s / 21 + 1) * sm(s, 250, 350) * (1 - sm(s, 950, 1050));
-    raw[i] = ya + (yb - ya) * THREE.MathUtils.clamp((s - sa) / (sb - sa), 0, 1) + dunes;
+  for (let i = 0, k = 0; i < raw.length; i++) {
+    const s = E0 + i; while (k < K.length - 2 && K[k + 1][0] < s) k++;
+    const [sa, ya] = K[k], [sb, yb] = K[k + 1];
+    let dn = 0; for (const [a, b] of dunes) dn += (1.6 * Math.sin(s / 34) + 1.2 * Math.sin(s / 21 + 1)) * sm(s, a, a + 100) * (1 - sm(s, b - 100, b));
+    raw[i] = ya + (yb - ya) * THREE.MathUtils.clamp((s - sa) / (sb - sa), 0, 1) + dn;
   }
-  const out = new Float32Array(raw.length), RR = 14;
-  for (let i = 0; i < raw.length; i++) { let a = 0, n = 0; for (let j = -RR; j <= RR; j++) { const v = raw[i + j]; if (v !== undefined) { a += v; n++; } } out[i] = a / n; }
-  return out;
-})();
-function elev(s) {
-  const x = THREE.MathUtils.clamp(s - E0, 0, EN - E0 - 1), i = Math.floor(x), f = x - i;
-  return ETAB[i] * (1 - f) + ETAB[i + 1] * f;
+  const tab = new Float32Array(raw.length), RR = 14;
+  for (let i = 0; i < raw.length; i++) { let a = 0, n = 0; for (let j = -RR; j <= RR; j++) { const v = raw[i + j]; if (v !== undefined) { a += v; n++; } } tab[i] = a / n; }
+  const elev = (s) => { const x = THREE.MathUtils.clamp(s - E0, 0, EN - E0 - 1), i = Math.floor(x), f = x - i; return tab[i] * (1 - f) + tab[i + 1] * f; };
+  return {
+    finish, elev,
+    gaps: canyons.map(([s0, s1]) => ({ s0, s1, respawn: s0 - 150 })),
+    cx: (s) => sway[0] * Math.sin((s - 150) / sway[1]) * sm(s, 100, 600) * (1 - sm(s, finish - 350, finish - 50)),
+    ramps: [...canyons.map(([s0]) => ({ s0: s0 - 24, len: 16, dL: -ROAD_HALF, dR: ROAD_HALF, h: 3.6 })), ...ramps],
+    hazards: devils.map((s, i) => ({ s, w: 0.5 + (i % 3) * 0.15, ph: i * 1.9, A: 11, l: 3, dL: 99, dR: 99, h: 4, active: true, text: ['먼지 회오리!', '시야 0 · 급감속', '#ffb37a'] })),
+    pickups: [
+      ...canyons.flatMap(([s0, s1]) => range(0, s1 - s0 + 20, 8).map((x) => ['coin', s0 - 10 + x, 0, 3 + 0.2 * x - 0.2 * x * x / (s1 - s0 + 20)])),
+      ...extra,
+    ],
+    trafficMaxS: finish + 100,
+    finishDelay: city ? 9000 : 900,
+    mv: { canyons, volcano, storms, city: city ? { s: finish + 160, d: 0 } : null },
+  };
 }
+const NOBOSS = { boss: null, legend: null };
+const POSTER = { s: 400, d: 2, y: 0, cam: { back: 11, side: -5, y: 2, ahead: 30, lookSide: 3, lookY: 4, fov: 58 } };
 
-// dust devils: whirlwinds that wander across the lanes (tick moves the hit boxes)
-const DEVILS = [1500, 1700, 2300, 2450, 2600, 2800].map((s, i) => ({ s, w: 0.5 + (i % 3) * 0.15, ph: i * 1.9, A: 11, l: 3, dL: 99, dR: 99, h: 4, active: true, text: ['먼지 회오리!', '시야 0 · 급감속', '#ffb37a'] }));
-
-export default {
-  id: 'mars', num: 9, name: '화성',
-  roadHalf: ROAD_HALF, lanes: [-9, -3, 3, 9], finish: FINISH_S,
-  gravity: 16,
-  gun: { rate: 9, dmg: 1, heat: 3.5 },
-  gaps: [{ s0: CANYON[0], s1: CANYON[1], respawn: CANYON[0] - 150 }],
-  splashY: () => -18,
-  elev,
-  cx(s) { return 60 * Math.sin((s - 150) / 600) * sm(s, 100, 600) * (1 - sm(s, 3050, 3350)); },
+// event 1: the colony errands: dunes, one canyon, Olympus Mons on the horizon
+const COLONY = areo({ finish: 3300, keys: [[-600, 0], [900, 0], [1300, 14], [1700, 14], [2100, 2], [3400, 0]], dunes: [[200, 800], [2300, 2800]],
+  canyons: [[1960, 2020]], volcano: { s: 1800, d: 2600 }, storms: [[1150, 1650]], devils: [1250, 1500, 2600], sway: [80, 520],
+  extra: [['h100', 700, 9, 1.6], ['air', 1400, -3, 1.2], ['h100', 2300, 3, 1.6], ['air', 3000, -9, 1.2],
+    ...range(300, 800, 14).map((s, i) => ['coin', s, [-3, 3, 9, 3, -3, -9][i % 6], 1.2])] });
+// event 2: rogue AI drones over the plains near the volcano's foot; shoot them down
+const SWARM = areo({ finish: 3400, keys: [[-600, 0], [1200, 0], [1500, 22], [1900, 26], [2300, 6], [3500, 0]], dunes: [[2500, 3200]],
+  canyons: [[1000, 1060]], volcano: { s: 1700, d: 1500 }, storms: [[2400, 2900]], devils: [1600, 1800, 2700], sway: [50, 700],
+  extra: [['air', 600, 3, 1.2], ['h100', 1400, -9, 1.6], ['air', 2200, 9, 1.2], ['h100', 3100, -3, 1.6]] });
+// event 3: Valles Marineris: three canyons, mesas, a long downhill run, made for flips
+const VALLES = areo({ finish: 3300, keys: [[-600, 30], [400, 30], [900, 18], [1500, 18], [2000, 6], [2600, 6], [3000, 0], [3400, 0]],
+  dunes: [[1550, 1900]], canyons: [[700, 770], [1350, 1430], [2350, 2440]], volcano: { s: 3000, d: -2800 }, storms: [[1700, 2100]], devils: [1100, 1250, 2900, 3050], sway: [45, 380],
+  ramps: [{ s0: 1050, len: 16, dL: -9, dR: -3, h: 4 }, { s0: 1800, len: 18, dL: 3, dR: 9, h: 4.4 }, { s0: 2750, len: 16, dL: -3, dR: 3, h: 3.4 }],
+  extra: [['h100', 1000, 3, 1.6], ['air', 1700, -9, 1.2], ['h100', 2600, 9, 1.6], ['air', 3100, 3, 1.2],
+    ...range(1550, 1900, 14).map((s, i) => ['coin', s, i % 2 ? 6 : -6, 1.2])] });
+// event 4: the original climb over Olympus Mons to the city, the boss and the ending
+const FINAL = areo({ finish: 3400, keys: [[-600, 0], [1150, 0], [1880, 58], [1930, 62], [1990, 56], [2060, 60], [2110, 63], [2190, 52], [2700, 4], [2900, 0], [4500, 0]],
+  dunes: [[250, 1050]], canyons: [[2930, 3000]], storms: [[700, 1300], [2350, 2900]], devils: [1500, 1700, 2300, 2450, 2600, 2800], city: true,
   ramps: [
     { s0: 560, len: 16, dL: 3, dR: 9, h: 3 },
     { s0: 820, len: 16, dL: -9, dR: -3, h: 3 },
     { s0: 1960, len: 18, dL: -12, dR: -5, h: 4.4 },   // over the caldera dip: the legend hangs above it
-    { s0: 2906, len: 16, dL: -ROAD_HALF, dR: ROAD_HALF, h: 3.6 },
     { s0: 3200, len: 16, dL: -3, dR: 3, h: 3 },
   ],
-  hazards: DEVILS,
-  legend: { s: 2040, d: -9, y: 12 },
-  pickups: [
-    ...range(0, 90, 8).map((x) => ['coin', 2920 + x, 0, 3 + 0.2 * x - 0.0021 * x * x]),
+  extra: [
     ...range(260, 960, 14).map((s, i) => ['coin', s, [-3, 3, 9, 3, -3, -9][i % 6], 1.2]),
     ...range(1250, 1850, 20).map((s, i) => ['coin', s, i % 2 ? 6 : -6, 1.2]),
     ...range(3250, 3390, 10).map((s, i) => ['coin', s, [9, 3, -3, -9][i % 4], 1.2]),
     ['h100', 700, 9, 1.6], ['h100', 1600, 0, 1.6], ['h100', 2500, -9, 1.6], ['h100', 3100, 9, 1.6],
     ['air', 500, -3, 1.2], ['air', 1400, 3, 1.2], ['air', 2200, -9, 1.2], ['air', 2850, 3, 1.2],
     ['gpu', 400, 9, 1.4], ['gpu', 1100, -9, 1.4], ['gpu', 1800, 3, 1.4], ['gpu', 2400, 9, 1.4], ['gpu', 3300, -3, 1.4],
-  ],
-  trafficMaxS: FINISH_S + 100,
+  ] });
+
+export default {
+  id: 'mars', num: 9, name: '화성',
+  roadHalf: ROAD_HALF, lanes: LANES,
+  gravity: 16,
+  gun: { rate: 9, dmg: 1, heat: 3.5 },
+  ...FINAL,
+  splashY: () => -18,
+  legend: { s: 2040, d: -9, y: 12 },
   road: { tex: 'mars', yellow: false, dashes: [0.25, 0.5, 0.75], tint: 'rgba(40,16,8,0.35)' },
   env: {
     bg: false, hdri: '', sun: ['#ffe4c8', 2.7], hemi: ['#e2a682', '#5a2816', 0.75],
@@ -89,7 +112,6 @@ export default {
   ],
   lines: { finish: '도착! 화성 첫 도시 완성. 인류는 이제 다행성 종족이다!', fall: ['협곡 추락!', '+3초', '붉은 먼지 털고 다시!'] },
   stars: { time: 80, text: '완주 · 보스 격추 · 80초 이내 또는 퍼펙트 랜딩 4회', perfect: 4 },
-  finishDelay: 9000,
   poster: { s: 1340, d: 0, y: 2.5, boss: [30, 18, 12, -0.4], cam: { back: 12, side: -6, y: 1, ahead: 46, lookSide: 2, lookY: 13, fov: 62 } },
   text: {
     eyebrow: 'STAGE 09 · MARS · FINAL', title: 'MARS', sub: 'AGI 오버로드와 최후의 결전',
@@ -98,6 +120,48 @@ export default {
     meta: '올림푸스 몬스 · 화성 · 리트윗 1,200만', load: '산소 발생기 가동 중 · 돔 압력 맞추는 중',
     hud: 'STAGE 9 · MARS', clear: 'FINAL STAGE CLEAR', clearTitle: '화성 첫 도시 건설!',
   },
+  // chapter 9: three jobs on their own routes, then the climb over Olympus Mons with the final boss
+  events: [
+    {
+      id: 'colony', name: '화성 콜로니 배송', ...COLONY, ...NOBOSS,
+      brief: '<b>배송</b> 첫 화성 정착민들의 심부름. 산소 공장, 감자 농장, 스타링크 화성 지점, 화성 1호 학교. 초록 정차 구역에서 <b>↓ 브레이크</b>. 먼지폭풍이 오면 앞이 안 보이니 네비를 믿어요.',
+      mission: { type: 'deliver', time: 110, allowMiss: 1, stops: [
+        { s: 1000, d: 9, name: '산소 공장', thanks: '숨 쉬는 건 유료 구독이에요', line: '산소 공장 직원 내렸어. 산소도 월 구독제래. 프리미엄은 질소 빼 준대.' },
+        { s: 1800, d: -9, name: '감자 농장', thanks: '감자 말고 다른 것도 키우고 싶어요', line: '감자 농부님 내렸다. 영화 보고 왔는데 진짜 감자밖에 안 자란대.' },
+        { s: 2450, d: 9, name: '스타링크 화성 지점', thanks: '핑 20분이에요. 빛의 속도 탓이래요' },
+        { s: 3020, d: -9, name: '화성 1호 학교', thanks: '첫 등교예요! 학생은 저 하나', line: '화성 첫 학생 내렸어. 반장, 부반장, 전교 1등 다 혼자 한대.' },
+      ] },
+      radio: [[20, '화성 콜로니 배송 알바야. 손님 넷. 저 멀리 큰 산이 올림푸스 몬스야.'], [1100, '먼지폭풍 온다! 앞이 안 보이면 네비 표지판 봐.'], [1880, '협곡이야! 점프대 타고 넘어!']],
+      lines: { finish: '배송 끝. 팁은 감자 한 포대. 화성에선 이게 화폐래.', failed: '정착민들이 산소 아끼느라 기다리기 힘들대… 다시 가자.' },
+      poster: POSTER, finishText: 'FINISH · 화성 1호 학교',
+      text: { clear: 'DELIVERY DONE', clearTitle: '배송 완료' },
+    },
+    {
+      id: 'swarm', name: '폭주 AI 드론 사냥', ...SWARM, ...NOBOSS,
+      brief: '<b>사냥</b> 데이터센터에서 탈출한 AI 드론들이 화성 평원을 점령했어요. <b>F 꾹</b>(휴대폰은 🔥)으로 랩터 캐논 연사. 가까운 드론을 자동 조준해요. 과열되지 않게 끊어 쏘세요.',
+      mission: { type: 'hunt', time: 66, need: 13, hp: 5, name: 'AI 드론', make: makeDrone,
+        // squadrons of three over the plains: the cannon can't clear every one before it gets away
+        targets: [320, 800, 1250, 1700, 2150, 2600, 3050].flatMap((s0, i) => [[s0, -6, 5], [s0 + 30, 6, 6.5], [s0 + 60, (i % 2 ? 1 : -1) * 2, 8]]) },
+      radio: [[20, 'AI 드론들이 탈출했대. 다들 자기가 AGI래. 랩터 캐논 F 꾹!'], [950, '협곡 지나면 오르막이야. 쏘면서 올라가!'], [2350, '먼지폭풍 속에서도 캐논은 자동 조준이야. 계속 쏴!']],
+      lines: { finish: '드론 정리 끝! 다들 "나는 그냥 언어 모델이에요" 하면서 떨어졌어.', failed: '드론이 너무 많이 도망갔어. 끊어 쏘면서 과열 피해 봐.' },
+      poster: POSTER, finishText: 'FINISH · 드론 사냥 끝',
+      text: { clear: 'DRONES DOWN', clearTitle: '드론 사냥 성공' },
+    },
+    {
+      id: 'valles', name: '마리너스 협곡 스턴트', ...VALLES, ...NOBOSS, legend: { s: 1860, d: 6, y: 13 },
+      brief: '<b>스턴트</b> 마리너스 협곡 내리막. 협곡 셋을 점프대로 넘으며 <b>배럴롤</b>, 퍼펙트 착지, 먼지 회오리 사이 아슬 추월로 <b>콤보 배수</b>를 키워요.',
+      mission: { type: 'stunt', scores: [5000, 11000, 20000] },
+      radio: [[20, '마리너스 협곡이야. 지구 그랜드캐니언의 다섯 배래. 묘기 부리기 딱이지.'], [620, '첫 협곡! 날면서 롤!'], [1650, '먼지폭풍 구간. 회오리 사이로 아슬하게 빠지면 점수야.'], [2280, '마지막 협곡 길어. 점프 꾹!']],
+      lines: { finish: '협곡 정복! 화성 첫 스턴트 기록이야. 관객은 탐사 로버 하나.', failed: '점수가 모자랐어. 협곡 위에서 롤 더 돌려 봐.' },
+      poster: POSTER, finishText: 'FINISH · 협곡 끝',
+      text: { clear: 'SHOW TIME', clearTitle: '스턴트 쇼 성공' },
+    },
+    {
+      id: 'final', name: 'AGI 오버로드 최후의 결전',
+      brief: '<b>최종 보스전</b> 올림푸스 몬스를 넘어 화성 첫 도시로. 머리 셋이 번갈아 조종하는 <b>AGI 오버로드</b>의 빛나는 머리를 랩터 캐논으로 노려요. 셋이 주도권 싸움을 하면 무방비!',
+      mission: { type: 'boss', time: 80, perfect: 4 },
+    },
+  ],
   build,
   tick,
   finishCam,
@@ -121,14 +185,17 @@ function field(s, d) {
   const a = Math.abs(d);
   let y = 4 * (noise(s / 160, d / 160) - 0.5) + 1.5 * (noise(s / 35, d / 35) - 0.5);
   // the volcano is a broad dome centred off to the right of the summit stretch
-  const vs = (s - 2000) / 1400, vd = (d - 900) / 1400, vr = Math.sqrt(vs * vs + vd * vd);
+  const vs = (s - VOLCANO.s) / 1400, vd = (d - VOLCANO.d) / 1400, vr = Math.sqrt(vs * vs + vd * vd);
   y += 260 * Math.max(0, 1 - vr) ** 1.6;
   // mesas on the horizon
   y += 90 * sm(a, 600, 1400) * sm(noise(s / 500, d / 400), 0.45, 0.6);
   return y;
 }
+// the course being built (set from the event's fields in build)
+let FINISH_S, CANYONS, CITY, VOLCANO, STORMS, DEVILS, elev;
+const inCanyon = (s, pad = 1) => CANYONS.some(([a, b]) => s > a - pad && s < b + pad);
 function groundRel(s, d) {
-  if (s > CANYON[0] - 1 && s < CANYON[1] + 1) return -60;
+  if (inCanyon(s)) return -60;
   const a = Math.abs(d);
   if (a < ROAD_HALF + 0.6) return -0.12;
   // the road is cut into the slope: banks blend into the natural ground
@@ -167,10 +234,32 @@ function makeOptimusCart() {
   return g;
 }
 
+// ---------- a rogue AI drone (hunt targets): a quadcopter with a GPU belly and one glowing eye ----------
+function makeDrone() {
+  const g = new THREE.Group();
+  const shell = new THREE.MeshPhysicalMaterial({ color: '#2a2d33', metalness: 0.7, roughness: 0.3, clearcoat: 0.8 });
+  const fin = new THREE.MeshStandardMaterial({ color: '#76b900', metalness: 0.5, roughness: 0.4 });
+  const glowM = (r, gg, b) => new THREE.MeshBasicMaterial({ color: new THREE.Color(r, gg, b), toneMapped: false });
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.7, 1.4, 6, 16), shell); body.rotation.x = Math.PI / 2; body.castShadow = true; g.add(body);
+  const gpu = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.35, 1.6), fin); gpu.position.y = -0.7; g.add(gpu);
+  for (let i = 0; i < 5; i++) { const f = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.04, 0.1), shell); f.position.set(0, -0.62, -0.6 + i * 0.3); g.add(f); }
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 12), glowM(4, 0.4, 0.3)); eye.position.set(0, 0.1, 1.2); g.add(eye);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.06, 8, 24), glowM(0.4, 1.6, 2.6)); ring.position.copy(eye.position); g.add(ring);
+  const rotorM = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 0.6, 0.65), transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide });
+  for (const [x, z] of [[-1.3, -1], [1.3, -1], [-1.3, 1], [1.3, 1]]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(Math.hypot(x, z) * 1.6, 0.12, 0.18), shell); arm.position.set(x / 2, 0.25, z / 2); arm.rotation.y = -Math.atan2(z, x); g.add(arm);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.3, 10), shell); hub.position.set(x, 0.35, z); g.add(hub);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.85, 24), rotorM); disc.rotation.x = -Math.PI / 2; disc.position.set(x, 0.52, z); g.add(disc);
+  }
+  return g;
+}
+
 // ---------- build ----------
 let MAT = null;
 function build(k) {
   live.k = k;
+  ({ finish: FINISH_S, hazards: DEVILS, elev } = k.ST);
+  ({ canyons: CANYONS, city: CITY, volcano: VOLCANO, storms: STORMS } = k.ST.mv);
   MAT = {
     ground: new THREE.MeshStandardMaterial({ map: k.photo('marssand_diff.jpg'), normalMap: k.photo('marssand_nor.jpg', { srgb: false }), color: '#e0b39a', roughness: 1, vertexColors: true }),
     rock: new THREE.MeshStandardMaterial({ map: k.photo('marsrock_diff.jpg'), normalMap: k.photo('marsrock_nor.jpg', { srgb: false }), color: '#c87a5a', roughness: 0.95 }),
@@ -184,12 +273,12 @@ function build(k) {
   buildTerrain(k);
   buildRocks(k);
   buildLandingZone(k);
-  buildCity(k);
+  if (CITY) buildCity(k);
   buildCannons(k);
   buildDevils(k);
   buildDust(k);
   buildSky(k);
-  k.finishArch('FINISH · 화성 첫 도시');
+  k.finishArch(k.ST.finishText || 'FINISH · 화성 첫 도시');
 }
 
 function shade(geo, fn) {
@@ -222,8 +311,8 @@ function buildRocks(k) {
   let n = 0;
   for (let i = 0; i < N * 3 && n < N; i++) {
     const s = -300 + r() * (FINISH_S + 600), d = (r() < 0.5 ? -1 : 1) * (ROAD_HALF + 2 + r() ** 1.4 * 170);
-    if (s > CANYON[0] - 4 && s < CANYON[1] + 4) continue;
-    if (s > CITY.s - 260 && Math.abs(d) < 160) continue;
+    if (inCanyon(s, 4)) continue;
+    if (CITY && s > CITY.s - 260 && Math.abs(d) < 160) continue;
     const sc = 0.15 + r() ** 3 * 2.8;
     k.world(s, d, groundRel(s, d) + sc * 0.2, _p); _q.setFromEuler(_e.set(r() * 3, r() * 6, r() * 3));
     im.setMatrixAt(n++, _m.compose(_p, _q, _s.set(sc * (0.8 + r() * 0.7), sc, sc * (0.8 + r() * 0.7))));
@@ -354,7 +443,7 @@ function tick(time, camera, info) {
   live.phobos.position.copy(camera.position).add(_p.set(0.5, 0.55, -0.67).normalize().multiplyScalar(2300)); live.phobos.rotation.y = time * 0.02;
   live.sun.position.copy(camera.position).add(_p.set(-0.5, 0.42, -0.6).normalize().multiplyScalar(2600));
   // dust storms: two big ones on the route plus a slow swell; fog closes in and turns browner
-  const storm = Math.max(sm(sCam, 700, 900) * (1 - sm(sCam, 1150, 1300)), sm(sCam, 2350, 2550) * (1 - sm(sCam, 2750, 2900))) * (0.75 + 0.25 * Math.sin(time * 0.7));
+  const storm = STORMS.reduce((m, [a, b]) => Math.max(m, sm(sCam, a, a + 200) * (1 - sm(sCam, b - 150, b))), 0) * (0.75 + 0.25 * Math.sin(time * 0.7));
   const fog = k.scene.fog, F = live.fog;
   fog.near = THREE.MathUtils.lerp(F.near, 15, storm); fog.far = THREE.MathUtils.lerp(F.far, 260, storm);
   fog.color.copy(F.col).lerp(_c.set('#9a5a3a'), storm * 0.7);
@@ -395,7 +484,7 @@ function tick(time, camera, info) {
 }
 const _c = new THREE.Color();
 function finishCam(camera, time) {
-  const c = live.cut; if (!c) return false;
+  const c = live.cut; if (!c || !CITY) return false;
   const t = time - c.t0, k = live.k;
   if (t < 1.4) return false;
   // rise and swing over the city

@@ -1,70 +1,87 @@
-// Stage 8: the Moon, Mare Tranquillitatis at low sun. A graded regolith track from the Starship HLS that
-// landed us, across three craters (their rims throw the car in one-third gravity), past the Apollo 11 site,
-// over a rille, by Jeff Baesongs' lunar fulfilment centre. Meteors strike marked spots. The roadster now
-// carries two Raptor cannons off the HLS: hold fire for auto-aimed rapid fire (stage.gun).
+// Stage 8: the Moon, Mare Tranquillitatis at low sun. Graded regolith tracks across craters (their rims
+// throw the car in one-third gravity), past the Apollo 11 site, over rilles, by Jeff Baesongs' lunar
+// fulfilment centre. Meteors strike marked spots. The roadster now carries two Raptor cannons off the HLS:
+// hold fire for auto-aimed rapid fire (stage.gun). Each event is its own track across the mare.
 // Boss: Jeff Baesongs' Late Shepherd, a rocket in a cowboy hat that drops same-day boxes and drones.
 import * as THREE from 'three';
 import { shipKit } from './starbase.js';
 import { makeEarth, makeParcelSat } from './starlink.js';
 
 const ROAD_HALF = 12;
-const FINISH_S = 3200;
-const RILLE = [2050, 2112];
-const APOLLO = { s: 1250, d: -40 };
-const DEPOT = { s: 2640, d: 95 };
+const LANES = [-9, -3, 3, 9];
 const HLS = { s: -70, d: -32 };
 const sm = THREE.MathUtils.smoothstep;
 
-// craters the road crosses: centre s, radius, depth; their 2D bowls continue into the terrain
-const ROAD_CRATERS = [{ s: 900, d: 0, r: 72, h: 7 }, { s: 1640, d: 6, r: 60, h: 6 }, { s: 2460, d: -4, r: 80, h: 8 }];
 function craterH(x, h) { // x = distance / radius
   const bowl = x < 1 ? -h * (1 - x * x) ** 1.6 : 0;
   const rim = h * 0.62 * Math.exp(-(((x - 1) / 0.2) ** 2));
   return bowl + rim;
 }
-function elevRaw(s) {
-  let y = 2.5 * Math.sin(s / 260) + 1.5 * Math.sin(s / 97 + 1);
-  for (const c of ROAD_CRATERS) y += craterH(Math.abs(s - c.s) / c.r, c.h);
-  return y;
-}
-const E0 = -600, EN = 4000;
-const ETAB = (() => { const t = new Float32Array(EN - E0 + 1); for (let i = 0; i < t.length; i++) t[i] = elevRaw(E0 + i); return t; })();
-function elev(s) {
-  const x = THREE.MathUtils.clamp(s - E0, 0, EN - E0 - 1), i = Math.floor(x), f = x - i;
-  return ETAB[i] * (1 - f) + ETAB[i + 1] * f;
-}
 
-// meteor strikes: a red ring marks a lane, then the impact; tick picks the lane each cycle
-const METEORS = [1420, 1560, 1830, 2700, 2880].map((s, i) => ({ s, l: 5, dL: 99, dR: 99, h: 3.5, period: 3.4 + (i % 2) * 0.6, on: 0.45, ph: i * 1.3, active: false, text: ['운석 직격!', '마이크로 운석 · 급감속', '#ff8a3d'] }));
+// ---------- course factory ----------
+// craters the road crosses ({ s, d, r, h }; their 2D bowls continue into the terrain), an optional rille
+// (a channel with a full-width ramp before it), the landmarks beside the road and the meteor spots
+function lunar({ finish, craters, rille = null, sway = [46, 520], apollo = null, depot = null, meteors = [], ramps = [], extra = [] }) {
+  const raw = (s) => { let y = 2.5 * Math.sin(s / 260) + 1.5 * Math.sin(s / 97 + 1); for (const c of craters) y += craterH(Math.abs(s - c.s) / c.r, c.h); return y; };
+  const E0 = -600, EN = finish + 800;
+  const tab = new Float32Array(EN - E0 + 1); for (let i = 0; i < tab.length; i++) tab[i] = raw(E0 + i);
+  const elev = (s) => { const x = THREE.MathUtils.clamp(s - E0, 0, EN - E0 - 1), i = Math.floor(x), f = x - i; return tab[i] * (1 - f) + tab[i + 1] * f; };
+  return {
+    finish, elev,
+    gaps: rille ? [{ s0: rille[0], s1: rille[1], respawn: rille[0] - 150 }] : [],
+    cx: (s) => sway[0] * Math.sin((s - 200) / sway[1]) * sm(s, 150, 600),
+    ramps: [...(rille ? [{ s0: rille[0] - 22, len: 16, dL: -ROAD_HALF, dR: ROAD_HALF, h: 3.4 }] : []), ...ramps],
+    // meteor strikes: a red ring marks a lane, then the impact; tick picks the lane each cycle
+    hazards: meteors.map((s, i) => ({ s, l: 5, dL: 99, dR: 99, h: 3.5, period: 3.4 + (i % 2) * 0.6, on: 0.45, ph: i * 1.3, active: false, text: ['운석 직격!', '마이크로 운석 · 급감속', '#ff8a3d'] })),
+    pickups: [
+      ...(rille ? range(0, rille[1] - rille[0] + 18, 8).map((x) => ['coin', rille[0] - 10 + x, 0, 3 + 0.22 * x - 0.0024 * x * x]) : []),
+      ...craters.flatMap((c, i) => range(0, 40, 8).map((x) => ['coin', c.s - c.r + x, LANES[(i + 2) % 4], 2.2 + 0.1 * x])),
+      ...extra,
+    ],
+    trafficMaxS: finish + 100,
+    mv: { craters, rille: rille || [1e9, 1e9], apollo, depot },
+  };
+}
+const NOBOSS = { boss: null, legend: null };
+const POSTER = { s: 400, d: 2, y: 0, cam: { back: 11, side: -5, y: 2, ahead: 30, lookSide: 3, lookY: 4, fov: 58 } };
 
-export default {
-  id: 'moon', num: 8, name: '달',
-  roadHalf: ROAD_HALF, lanes: [-9, -3, 3, 9], finish: FINISH_S,
-  gravity: 11,
-  gun: { rate: 9, dmg: 1, heat: 3.5 },
-  gaps: [{ s0: RILLE[0], s1: RILLE[1], respawn: RILLE[0] - 150 }],
-  splashY: () => -14,
-  elev,
-  cx(s) { return 46 * Math.sin((s - 200) / 520) * sm(s, 150, 600); },
+// event 1: errands between the new bases, past the Apollo 11 site
+const ARTEMIS = lunar({ finish: 3400, craters: [{ s: 700, d: 0, r: 60, h: 6 }, { s: 1500, d: -4, r: 70, h: 7 }, { s: 2620, d: 3, r: 65, h: 6 }],
+  rille: [2050, 2100], sway: [60, 440], apollo: { s: 1240, d: 42 }, meteors: [1320, 2800],
+  extra: [['h100', 900, 9, 1.6], ['air', 1700, -3, 1.2], ['h100', 2450, -9, 1.6], ['air', 3200, 3, 1.2]] });
+// event 2: Baesongs' same-day drones swarm out of the fulfilment centre; shoot them down
+const DRONES = lunar({ finish: 3300, craters: [{ s: 600, d: 0, r: 50, h: 5 }, { s: 1300, d: 5, r: 80, h: 8 }, { s: 2250, d: -3, r: 55, h: 6 }, { s: 2900, d: 0, r: 60, h: 5 }],
+  rille: [1720, 1780], sway: [40, 600], depot: { s: 1000, d: -95 }, meteors: [1450, 2500],
+  extra: [['air', 450, 3, 1.2], ['h100', 1600, 9, 1.6], ['air', 2100, -9, 1.2], ['h100', 3000, -3, 1.6]] });
+// event 3: a rally against souped-up rovers: no rille (rovers can't jump), wide craters, meteor showers
+const RALLY = lunar({ finish: 3500, craters: [{ s: 800, d: 0, r: 90, h: 5 }, { s: 1750, d: 4, r: 70, h: 5 }, { s: 2750, d: -4, r: 100, h: 6 }],
+  sway: [75, 380], meteors: [1200, 1950, 2300, 3100],
+  extra: [['air', 600, -9, 1.2], ['h100', 1400, 3, 1.6], ['air', 2200, 9, 1.2], ['h100', 3200, -3, 1.6]] });
+// event 4: the original track with the boss
+const SHEPHERD = lunar({ finish: 3200, craters: [{ s: 900, d: 0, r: 72, h: 7 }, { s: 1640, d: 6, r: 60, h: 6 }, { s: 2460, d: -4, r: 80, h: 8 }],
+  rille: [2050, 2112], apollo: { s: 1250, d: -40 }, depot: { s: 2640, d: 95 }, meteors: [1420, 1560, 1830, 2700, 2880],
   ramps: [
     { s0: 520, len: 16, dL: -9, dR: -3, h: 3 },
     { s0: 1206, len: 18, dL: -12, dR: -5, h: 4.4 },   // Apollo hop: the legend floats over the flag
-    { s0: 2028, len: 16, dL: -ROAD_HALF, dR: ROAD_HALF, h: 3.4 },
     { s0: 2300, len: 16, dL: 3, dR: 9, h: 3 },
     { s0: 2960, len: 16, dL: -3, dR: 3, h: 3 },
   ],
-  hazards: METEORS,
-  legend: { s: 1290, d: -11, y: 12 },
-  pickups: [
-    ...range(0, 80, 8).map((x) => ['coin', 2040 + x, 0, 3 + 0.22 * x - 0.0024 * x * x]),
-    ...[828, 1580, 2380].flatMap((s0) => range(0, 40, 8).map((x) => ['coin', s0 + x, 3, 2.2 + 0.1 * x])),
+  extra: [
     ...range(140, 460, 16).map((s, i) => ['coin', s, i % 4 < 2 ? 3 : -3, 1.2]),
     ...range(2700, 3150, 18).map((s, i) => ['coin', s, [9, 3, -3, -9][i % 4], 1.2]),
     ['h100', 700, 9, 1.6], ['h100', 1900, -9, 1.6], ['h100', 2800, 0, 1.6],
     ['air', 600, 3, 1.2], ['air', 1350, 9, 1.2], ['air', 1990, -3, 1.2], ['air', 2600, -9, 1.2],
     ['gpu', 380, -9, 1.4], ['gpu', 1100, 3, 1.4], ['gpu', 1750, -3, 1.4], ['gpu', 2250, 9, 1.4], ['gpu', 3050, -9, 1.4],
-  ],
-  trafficMaxS: FINISH_S + 100,
+  ] });
+
+export default {
+  id: 'moon', num: 8, name: '달',
+  roadHalf: ROAD_HALF, lanes: LANES,
+  gravity: 11,
+  gun: { rate: 9, dmg: 1, heat: 3.5 },
+  ...SHEPHERD,
+  splashY: () => -14,
+  legend: { s: 1290, d: -11, y: 12 },
   road: { tex: 'moon', yellow: false, dashes: [0.25, 0.5, 0.75], tint: 'rgba(26,24,24,0.42)' },
   env: {
     bg: false, hdri: '', sun: ['#fffaf2', 3.6], hemi: ['#14161c', '#5d5a55', 0.32],
@@ -98,6 +115,53 @@ export default {
     meta: '고요의 바다 · 달 · 리트윗 510만', load: '레골리스 다지는 중 · 랩터 캐논 장전 중',
     hud: 'STAGE 8 · THE MOON', clear: 'STAGE 08 CLEAR', clearTitle: '달 정복',
   },
+  // chapter 8: three jobs on their own tracks across the mare, then the original track with the boss
+  events: [
+    {
+      id: 'artemis', name: '달 기지 배송', ...ARTEMIS, ...NOBOSS,
+      brief: '<b>배송</b> 새로 생긴 달 기지들에 손님을 내려 줘요. 아르테미스 기지, 헬륨-3 광산, 달 먼지 세탁소, 월면 부동산. 초록 정차 구역에서 <b>↓ 브레이크</b>. 중력이 약해서 크레이터 가장자리에선 붕 떠요.',
+      mission: { type: 'deliver', time: 95, allowMiss: 1, stops: [
+        { s: 1050, d: -9, name: '아르테미스 기지', thanks: '예산 삭감 전에 와 주셔서 다행이에요', line: '아르테미스 기지 직원 내렸어. 발사가 또 연기됐대.' },
+        { s: 1850, d: 9, name: '헬륨-3 광산', thanks: '핵융합 발전소는 아직 30년 남았대요' },
+        { s: 2350, d: -9, name: '달 먼지 세탁소', thanks: '레골리스는 절대 안 지워져요', line: '달 먼지는 정전기 때문에 옷에 딱 붙는대. 세탁소 사장님 울고 있어.' },
+        { s: 3060, d: 9, name: '월면 부동산', thanks: '지구 보이는 방, 1억 달러부터예요' },
+      ] },
+      radio: [[20, '달 택시 알바야. 기지 네 군데. 랩터 캐논은 오늘은 그냥 장식이야.'], [1150, '오른쪽에 아폴로 11호 착륙지! 국기가 아직 서 있어.'], [1970, '앞에 협곡! 점프대 타고 넘어!']],
+      lines: { finish: '배송 끝. 팁은 헬륨-3 한 통. 쓸 데는 없대.', failed: '달 기지 손님들이 기다리다 산소가 떨어질 뻔했어… 다시 가자.' },
+      poster: POSTER, finishText: 'FINISH · 월면 부동산',
+      text: { clear: 'DELIVERY DONE', clearTitle: '배송 완료' },
+    },
+    {
+      id: 'drones', name: '당일배송 드론 사냥', ...DRONES, ...NOBOSS,
+      brief: '<b>사냥</b> 배송스 물류센터에서 당일배송 드론이 쏟아져 나와요. <b>F 꾹</b>(휴대폰은 🔥)으로 랩터 캐논을 쏘면 가까운 드론을 자동 조준해요. 과열되지 않게 끊어 쏘고, 지나친 드론은 도망가요.',
+      mission: { type: 'hunt', time: 62, need: 12, hp: 6, name: '당일배송 드론', make: () => makeParcelSat('#b88a58', '당일배송'),
+        // pairs: the cannon has to switch fast to get both before they get away
+        targets: [300, 650, 1000, 1350, 1950, 2250, 2600, 2950, 3200].flatMap((s0, i) => [[s0, (i % 2 ? 1 : -1) * 6, 5], [s0 + 30, (i % 2 ? -1 : 1) * 4, 7]]) },
+      radio: [[20, '배송스 물류센터에서 드론이 떼로 나온다! 랩터 캐논 F 꾹! 자동 조준이야.'], [700, '너무 오래 쏘면 과열돼. 끊어서 쏴.'], [1650, '앞에 협곡! 점프하면서도 쏠 수 있어.'], [2600, '드론 아직 남았어. 다 떨어뜨려!']],
+      lines: { finish: '드론 격추 완료! 배송스 본사에 "배송 지연" 문자 보냈어.', failed: '드론이 너무 많이 도망갔어. 끊어 쏘면서 과열을 피해 봐.' },
+      poster: POSTER, finishText: 'FINISH · 드론 사냥 끝',
+      text: { clear: 'DRONES DOWN', clearTitle: '드론 사냥 성공' },
+    },
+    {
+      id: 'rally', name: '월면차 랠리', ...RALLY, ...NOBOSS,
+      traffic: { rover: { make: makeLRV, name: '아폴로 월면차 (빈티지)', speed: [15, 19], n: 5, color: '#c9c2b0' } },
+      brief: '<b>레이스</b> 고요의 바다 랠리. 상대는 튜닝한 빈티지 월면차 셋. 넓은 크레이터를 넘을 때 퍼펙트 착지로 부스트를 챙기고, 운석이 떨어지는 빨간 원은 피해요.',
+      mission: { type: 'rivals', time: 64, perfect: 2, rivals: [
+        { type: 'rover', name: '아폴로 15호 (튜닝)', label: 'APOLLO 15', speed: 55.5, d: -3, s: 24, color: '#e0d8c4' },
+        { type: 'rover', name: '아폴로 16호 (튜닝)', label: 'APOLLO 16', speed: 57, d: 9, s: 30, color: '#d8c890' },
+        { type: 'rover', name: '아폴로 17호 (터보)', label: 'APOLLO 17', speed: 58.5, d: -9, s: 36, color: '#f2b632', tagColor: '#ffc83d' },
+      ] },
+      radio: [[20, '1972년식 월면차들이 랠리 걸어왔어. 50년 동안 튜닝만 했대.'], [1150, '운석 소나기 구간! 빨간 원 피해!'], [2600, '마지막 큰 크레이터야. 퍼펙트 착지하면 부스트!']],
+      lines: { finish: '랠리 우승! 월면차 할아버지들이 박물관으로 돌아갔어.', failed: '50년 된 차한테 졌어… 크레이터에서 퍼펙트 착지 부스트 챙겨.' },
+      poster: POSTER, finishText: 'FINISH · 고요의 바다 랠리',
+      text: { clear: 'WINNER', clearTitle: '랠리 우승' },
+    },
+    {
+      id: 'shepherd', name: '레이트 셰퍼드 격추',
+      brief: '<b>보스전</b> 카우보이 모자를 쓴 배송스의 로켓이 상자와 드론을 떨궈요. 드론부터 쏘고, 보스가 <b>착륙 연습</b>할 때 랩터 캐논을 집중 사격해요.',
+      mission: { type: 'boss', time: 72, perfect: 4 },
+    },
+  ],
   build,
   tick,
 };
@@ -115,14 +179,17 @@ const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vect
 const live = { k: null, earth: null, atmo: null, sun: null, meteors: [], beacons: null };
 
 // ---------- terrain: the road's own profile near it, a cratered mare beyond, highlands on the horizon ----------
-const FIELD = (() => {
-  const r = rnd(42), out = [...ROAD_CRATERS];
+// the course being built (set from the event's fields in build)
+let FINISH_S, RILLE, APOLLO, DEPOT, METEORS, elev, FIELD;
+function setCourse(ST) {
+  ({ finish: FINISH_S, hazards: METEORS, elev } = ST);
+  ({ rille: RILLE, apollo: APOLLO, depot: DEPOT } = ST.mv);
+  const r = rnd(42); FIELD = [...ST.mv.craters];
   for (let i = 0; i < 70; i++) {
-    const s = -400 + r() * 4300, d = (r() < 0.5 ? -1 : 1) * (40 + r() * 600), rad = 8 + r() ** 2 * 70;
-    out.push({ s, d, r: rad, h: rad * (0.12 + r() * 0.06) });
+    const s = -400 + r() * (FINISH_S + 1100), d = (r() < 0.5 ? -1 : 1) * (40 + r() * 600), rad = 8 + r() ** 2 * 70;
+    FIELD.push({ s, d, r: rad, h: rad * (0.12 + r() * 0.06) });
   }
-  return out;
-})();
+}
 function field(s, d) {
   let y = 3 * (noise(s / 180, d / 180) - 0.5) + 1.2 * (noise(s / 40, d / 40) - 0.5);
   const a = Math.abs(d);
@@ -177,6 +244,7 @@ function foilTex(k, base = '#c8952e') {
 }
 function build(k) {
   live.k = k;
+  setCourse(k.ST);
   const foil = foilTex(k);
   MAT = {
     ground: new THREE.MeshStandardMaterial({ map: k.photo('moondust_diff.jpg', { rep: [1, 1] }), normalMap: k.photo('moondust_nor.jpg', { srgb: false }), normalScale: new THREE.Vector2(1.2, 1.2), color: '#c8c4bc', roughness: 1, vertexColors: true }),
@@ -194,13 +262,13 @@ function build(k) {
   buildTerrain(k);
   buildRocks(k);
   buildBeacons(k);
-  buildApollo(k);
-  buildDepot(k);
+  if (APOLLO) buildApollo(k);
+  if (DEPOT) buildDepot(k);
   buildHLS(k);
   buildCannons(k);
   buildSky(k);
   buildMeteors(k);
-  k.finishArch('FINISH · 다음은 화성');
+  k.finishArch(k.ST.finishText || 'FINISH · 다음은 화성');
 }
 
 function shade(geo, k, fn) {

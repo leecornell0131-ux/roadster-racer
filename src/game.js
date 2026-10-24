@@ -39,7 +39,7 @@ const ST = { ...BASE, ...EV, id: BASE.id, name: BASE.name, event: EV, evIndex: E
   text: { ...BASE.text, ...EV.text }, lines: { ...BASE.lines, ...EV.lines }, env: { ...BASE.env, ...EV.env } };
 // real-city events: the track is a route on the city's OpenStreetMap road graph. Length, corners, stops
 // and eggs come from the real streets; fields given as functions of the route length are resolved here.
-const CITY = ST.route ? await loadCity(BASE.city) : null;
+const CITY = ST.route ? await loadCity(ST.city) : null;
 const ROUTE = CITY ? planRoute(CITY, ST.route) : null;
 if (ROUTE) {
   ST.finish = ROUTE.finish; ST.turns = ROUTE.turns; ST.cx = null;
@@ -639,7 +639,7 @@ function placeBuildings(kinds) {
     scene.add(inst);
   });
 }
-const kit = { ST, CITY, buildCity: () => buildCity(), clearOfRoad, forkZone, sideRuns, FORKS, curvature, THREE, scene, sky, prop, Q, IS_MOBILE, M, world, frame, elev, ribbon, wall, crossWall, grid, photo, canvasTex, textTex, addBillboard, FACADES, facadeMat, placeBuildings, finishArch };
+const kit = { ST, CITY, ROUTE, buildCity: () => buildCity(), clearOfRoad, forkZone, sideRuns, FORKS, curvature, THREE, scene, sky, prop, Q, IS_MOBILE, M, world, frame, elev, ribbon, wall, crossWall, grid, photo, canvasTex, textTex, addBillboard, FACADES, facadeMat, placeBuildings, finishArch };
 
 // ---------- vehicles ----------
 // ---------- pickups ----------
@@ -1266,7 +1266,7 @@ let mission = null;
 const MISSION = ST.mission || { type: 'race', time: ST.stars?.time, perfect: ST.stars?.perfect || 3, bossStar: !!ST.boss };
 const missionObjs = [];
 const missionCtx = {
-  P, get kit() { return kit; }, toast, floatText, blip, trick, touch: IS_MOBILE,
+  P, get kit() { return kit; }, toast, floatText, blip, trick, puff, touch: IS_MOBILE,
   radio: (text, who) => { const c = CAST[who] || CAST.hero; radio(text, c.name, c.ava, c.face); },
   score: () => P.score, boss: () => boss, time: () => performance.now() / 1000, raceT: () => raceT,
   respawn: (s, v) => respawn(s, v),
@@ -1338,7 +1338,7 @@ if (GUN) {
 let gunCd = 0, gunSide = 1;
 const _gv = new THREE.Vector3(), _gt = new THREE.Vector3();
 function gunTargets() {
-  const out = [...(ST.targets?.() || []), ...(boss?.targets?.() || [])];
+  const out = [...(ST.targets?.() || []), ...(boss?.targets?.() || []), ...(mission?.targets?.() || [])];
   if (boss?.B.active && !boss.B.defeated && boss.B.mesh.visible) out.push({ pos: boss.B.mesh.userData.eye.getWorldPosition(new THREE.Vector3()), r: 2.5, boss: true, hit: (n) => boss.damage(n, '랩터 캐논', true) });
   return out;
 }
@@ -1991,7 +1991,7 @@ function nextEvent() {
   return { stage: c.st.id, i: c.i, label: label(c), short: c.st.events ? c.e.name : c.st.name };
 }
 const fmtPlay = (t) => (t >= 3600 ? `${Math.floor(t / 3600)}시간 ${Math.floor(t % 3600 / 60)}분` : `${Math.floor(t / 60)}분 ${Math.floor(t % 60)}초`);
-const TYPE_NAME = { tutorial: '연습', deliver: '배송', stunt: '스턴트', rivals: '레이스', boss: '보스전', race: '주행' };
+const TYPE_NAME = { tutorial: '연습', deliver: '배송', stunt: '스턴트', rivals: '레이스', boss: '보스전', race: '주행', hunt: '사냥' };
 function allPassUI() {
   const b = $('passBtn'); if (!b) return;
   b.textContent = UNLOCK_ALL ? '🔓 올패스 켬' : '🔒 올패스'; b.classList.toggle('on', UNLOCK_ALL);
