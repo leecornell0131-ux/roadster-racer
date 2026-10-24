@@ -1296,6 +1296,7 @@ const carReady = Promise.race([
 async function boot() {
   await propsReady; await headsReady;
   try { Object.assign(FACES, portraits(HEAD_LIST)); } catch (e) { console.warn('portraits failed', e); }
+  const tav = document.querySelector('.tweet .av'); if (tav && FACES.elon) { tav.textContent = ''; tav.style.background = `url(${FACES.elon}) center / 150% no-repeat #333`; }
   buildWorld();
   await carReady; await trafficReady;
   try {
