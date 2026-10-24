@@ -1,0 +1,36 @@
+# 로드스터 레이서 아이폰 앱 프로젝트 설정. Mac 없이 클라우드(Codemagic·GitHub Actions)에서
+# XcodeGen으로 Xcode 프로젝트를 만들어 빌드함. 그래서 .xcodeproj는 저장소에 넣지 않음.
+# 게임 파일(web/)은 빌드 전에 `node tools/build-ios-web.mjs`로 만듦.
+name: RoadsterRacer
+options:
+  bundleIdPrefix: kr.roadsterracer
+  developmentLanguage: ko
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    VERSIONING_SYSTEM: apple-generic
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGN_STYLE: Automatic
+    GENERATE_INFOPLIST_FILE: NO
+targets:
+  RoadsterRacer:
+    type: application
+    platform: iOS
+    sources:
+      - RoadsterRacer
+      # 게임 파일을 폴더째 앱에 넣음 (경로 그대로 app://game/... 으로 열림)
+      - path: web
+        type: folder
+        buildPhase: resources
+    scheme: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: kr.roadsterracer.app
+        PRODUCT_NAME: RoadsterRacer
+        INFOPLIST_FILE: RoadsterRacer/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"
