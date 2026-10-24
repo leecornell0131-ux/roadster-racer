@@ -1880,9 +1880,10 @@ function updateCamera(dt, time) {
   const speedK = P.v / 70;
   // follow the car's height, but only part of the way up a jump (above where it last stood)
   // sits a little high and aims far down the road, so ramps, gaps and traffic read early
-  const lift = Math.max(0, P.y - (P.lastG || 0)), back = 8.8 + speedK * 2.4, ahead = 24 + speedK * 8;
-  tmpV.copy(car.position).addScaledVector(fr.f, -back); tmpV.y = Math.max(elev(P.s), elev(P.s - back) - 1.5) + Math.max(P.y - lift * 0.3, 0) + 3.9 + speedK * 0.5;
-  lookV.copy(car.position).addScaledVector(fr.f, ahead); lookV.y = elev(P.s + ahead) + P.y - lift * 0.45 + 1.1;
+  // high chase cam looking down the road (user ask, 2026-10-24): see further ahead, car sits in the lower middle
+  const lift = Math.max(0, P.y - (P.lastG || 0)), back = 10.5 + speedK * 2.6, ahead = 24 + speedK * 8;
+  tmpV.copy(car.position).addScaledVector(fr.f, -back); tmpV.y = Math.max(elev(P.s), elev(P.s - back) - 1.5) + Math.max(P.y - lift * 0.3, 0) + 6.4 + speedK * 0.8;
+  lookV.copy(car.position).addScaledVector(fr.f, ahead); lookV.y = elev(P.s + ahead) + P.y - lift * 0.45 - 4.2; // aim below the road ahead: tilts the view down so the car stays clear of the bottom HUD
   const k = snapCam ? 1 : Math.min(1, dt * 7);
   camPos.lerp(tmpV, k); camLook.lerp(lookV, snapCam ? 1 : Math.min(1, dt * 10)); snapCam = false;
   camera.position.copy(camPos);
