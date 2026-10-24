@@ -1320,7 +1320,7 @@ function stepRival(t, dt) {
   let target = t.finishT != null ? 18 : t.base * band;
   // real corners: rivals brake for them like you do
   let kMax = 0; for (let ds = 0; ds < 60; ds += 6) kMax = Math.max(kMax, Math.abs(curvature(t.s + ds)));
-  if (kMax > 0) target = Math.min(target, Math.sqrt(16 / kMax)); // rivals have stock grip plus a little
+  if (kMax > 0) target = Math.min(target, Math.sqrt(gripLimit(0) / kMax)); // rivals have stock grip
   let lead = null;
   for (const o of traffic) if (o !== t && o.s > t.s && o.s - t.s < 38 && Math.abs(o.d - t.dT) < 2.8 && (!lead || o.s < lead.s)) lead = o;
   if (lead && lead.v < target - 2 && t.pend == null) {

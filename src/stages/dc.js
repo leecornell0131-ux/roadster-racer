@@ -98,7 +98,7 @@ export default {
       elev: null, cx: null, legend: null, pickups: [], gaps: [], jams: [], boss: null, trafficMaxS: 9000,
       forks: (L, R) => bigTurns(R, 1).map((t) => ({ at: t.s, name: '정상 경로' })),
       ramps: (L) => rampRun(380, L - 200, 300, 3),
-      mission: { type: 'deliver', time: 170, allowMiss: 1, stops: [
+      mission: { type: 'deliver', time: 195, allowMiss: 1, stops: [
         { place: 'Supreme Court of the United States', name: '대법원', thanks: '변론 시작 전이에요!', line: '대법관 한 분 내렸어. 자율주행 판결 날이래.' },
         { place: 'National Gallery of Art', name: '내셔널 갤러리', thanks: '전시 오픈 맞췄어요' },
         { place: 'National Air and Space Museum', name: '항공우주박물관', thanks: '우리 차도 여기 전시돼야 해요', line: '박물관 직원이 우리 차 전시하고 싶대. 아직은 안 돼, 화성 가야 해.' },

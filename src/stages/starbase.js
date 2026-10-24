@@ -118,7 +118,7 @@ export default {
       route: { from: 'Fort Brown', via: ['Stillman House Museum', 'Public Market and Town Hall', 'Brownsville City Hall', 'Southern Pacific Railroad Passenger Depot'], to: 'Children’s Museum of Brownsville' },
       forks: (L, R) => bigTurns(R, 1).map((t) => ({ at: t.s, name: '정상 경로' })),
       ramps: (L) => rampRun(380, L - 200, 300, 2),
-      mission: { type: 'deliver', time: 110, allowMiss: 1, stops: [
+      mission: { type: 'deliver', time: 125, allowMiss: 1, stops: [
         { place: 'Stillman House Museum', name: '스틸먼 하우스', thanks: '브라운스빌을 세운 집이에요. 볼트 받아 가세요', line: '스틸먼 씨가 이 도시를 세웠대. 지금은 일론이 옆 동네를 통째로 세우는 중이고.' },
         { place: 'Public Market and Town Hall', name: '퍼블릭 마켓', thanks: '타코 서른 개 스타베이스로 배달이요' },
         { place: 'Brownsville City Hall', name: '브라운스빌 시청', thanks: '스타베이스 시 승인 서류예요. 도장 세 개 찍었어요', line: '시청 직원 내렸다. 옆 동네가 아예 시가 됐대. 시장 이름은 비밀.' },
