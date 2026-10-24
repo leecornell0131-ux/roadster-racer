@@ -656,8 +656,9 @@ export const BOSSES = {
   },
 };
 
-export function createBoss(ctx, key, protos) {
-  const def = BOSSES[key];
+export function createBoss(ctx, key, protos, opts) {
+  // an event can retune a boss (where it shows up, how long it stays, its health)
+  const def = BOSSES[key] && { ...BOSSES[key], ...opts, lines: { ...BOSSES[key].lines, ...opts?.lines } };
   if (!def) return null;
   for (const k of def.need || ['waymo']) if (!protos[k]) throw new Error('boss needs model ' + k);
   const orb = !!def.orb, lizard = !!def.lizard;
@@ -998,7 +999,7 @@ export function createBoss(ctx, key, protos) {
       const rear = B.s - rearOff, front = B.s + frontOff;
       if (P.s > rear - 2.2 && P.s < front && Math.abs(P.d - B.d) < size.x / 2 + 0.9) {
         const top = roofAt(P.s, P.d, 99);
-        if (P.y < top - 0.6 && P.s < rear + 1) { P.s = rear - 2.3; P.v = Math.min(P.v, (B.v || P.v) * 0.6); P.crashT = 0.6; P.shake = 0.7; if (B.bumpT <= 0 || B.bumpT == null) { ctx.toast('쾅!', def.bump || '트레일러에 부딪힘', '#ff3d6e'); ctx.blip(160, 40, 0.3, 'sawtooth', 0.18); } B.bumpT = 0.6; }
+        if (P.y < top - 0.6 && P.s < rear + 1) { P.s = rear - 2.3; P.v = Math.min(P.v, (B.v || P.v) * 0.6); P.crashT = 0.6; P.shake = 0.7; if (B.bumpT <= 0 || B.bumpT == null) { ctx.damage?.(8, '보스 충돌'); ctx.toast('쾅!', def.bump || '트레일러에 부딪힘', '#ff3d6e'); ctx.blip(160, 40, 0.3, 'sawtooth', 0.18); } B.bumpT = 0.6; }
       }
       B.bumpT = (B.bumpT || 0) - dt;
     } else {
@@ -1072,7 +1073,7 @@ export function createBoss(ctx, key, protos) {
       const inLane = B.beam.lanes.some((i) => Math.abs(ctx.LANES[i] - P.d) < LANE_W / 2);
       const ds = B.s - P.s;
       if (!B.beam.hit && inLane && ds > 0 && ds < STRIPE_LEN + 4 && P.y - ground < 1.3) {
-        B.beam.hit = true; P.v *= 0.55; P.crashT = 0.6; P.shake = 0.6;
+        B.beam.hit = true; P.v *= 0.55; P.crashT = 0.6; P.shake = 0.6; ctx.damage?.(12, '보스 공격');
         if (lizard) ctx.toast('혀 날름!', '렙틸리언 혀에 붙잡힘', '#7dff5a'); else if (truck) ctx.toast('연비 규제 레이저!', '리터당 50km 미달 · 급감속', '#7ab8ff'); else if (def.beamText) ctx.toast(...def.beamText); else ctx.toast('장애물 감지!', '라이다에 걸려 급정거', '#ff3d6e');
         ctx.blip(200, 60, 0.4, 'square', 0.2);
       }
@@ -1093,15 +1094,15 @@ export function createBoss(ctx, key, protos) {
           // sink to the car's height and slide into its lane
           c.d += THREE.MathUtils.clamp(P.d - c.d, -3.5 * dt, 3.5 * dt); c.y += (1.8 - c.y) * Math.min(1, dt * 0.9);
           if (Math.abs(c.s - P.s) < 2 && Math.abs(c.d - P.d) < 2 && Math.abs(P.y + 0.7 - c.y) < 1.8) {
-            c.dead = true; P.v *= 0.72; P.crashT = 0.4; P.shake = 0.5;
+            c.dead = true; P.v *= 0.72; P.crashT = 0.4; P.shake = 0.5; ctx.damage?.(8, '보스 공격');
             ctx.toast('배송 완료!', '드론이 택배를 던짐 · 감속', '#ffc83d'); ctx.blip(500, 120, 0.3, 'square', 0.14);
           }
           continue;
         }
-        if (c.kind === 'wave') { if (!c.hit && Math.abs(c.s - P.s) < 1.6) { c.hit = true; if (P.y - ctx.carGround(P.s, P.d) < 1.0) { P.v *= 0.6; P.crashT = 0.5; P.shake = 0.6; ctx.toast('예스 위 캔!', '메가폰 충격파에 맞음 · 점프로 넘어요', '#7ab8ff'); ctx.blip(120, 40, 0.4, 'sawtooth', 0.18); } else { ctx.gainXP(5); ctx.floatText('충격파 회피 +5 EXP'); } } continue; }
+        if (c.kind === 'wave') { if (!c.hit && Math.abs(c.s - P.s) < 1.6) { c.hit = true; if (P.y - ctx.carGround(P.s, P.d) < 1.0) { P.v *= 0.6; P.crashT = 0.5; P.shake = 0.6; ctx.damage?.(8, '충격파'); ctx.toast('예스 위 캔!', '메가폰 충격파에 맞음 · 점프로 넘어요', '#7ab8ff'); ctx.blip(120, 40, 0.4, 'sawtooth', 0.18); } else { ctx.gainXP(5); ctx.floatText('충격파 회피 +5 EXP'); } } continue; }
         if (c.kind === 'wall') { if (!c.hit && P.s > c.s) { c.hit = true; ctx.gainXP(5); ctx.floatText('과대광고 통과 +5 EXP'); } continue; }
         if (!c.hit && near && Math.abs(c.d - P.d) < 1.9 && P.y - ctx.carGround(P.s, P.d) < 1.8) {
-          c.hit = true; P.v *= 0.7; P.crashT = 0.4; P.shake = 0.45; ctx.addDoge(-10);
+          c.hit = true; P.v *= 0.7; P.crashT = 0.4; P.shake = 0.45; ctx.addDoge(-10); ctx.damage?.(6, '보스 공격');
           ctx.toast('구독료 자동결제!', '-Ð10 · 감속', '#b48cff'); ctx.blip(900, 300, 0.25, 'square', 0.14);
           c.flyV = new THREE.Vector3((Math.random() - 0.5) * 6, 7, 0);
         }
@@ -1110,7 +1111,7 @@ export function createBoss(ctx, key, protos) {
       }
       if (!c.landed) { c.vy -= 30 * dt; c.y += c.vy * dt; const gy = ctx.carGround(c.s, c.d); if (c.y <= gy) { c.y = gy; c.landed = true; } }
       if (!c.hit && Math.abs(c.s - P.s) < 1.6 && Math.abs(c.d - P.d) < (ground ? 2.2 : 1.4)) {
-        if (P.y - ctx.carGround(P.s, P.d) < 0.9) { c.hit = true; P.v *= 0.72; P.shake = 0.4; ctx.floatText(def.dropHit || (ground ? '가격 파괴!' : '콘 충돌!')); ctx.blip(300, 100, 0.2, 'square', 0.12); c.flyV = new THREE.Vector3((Math.random() - 0.5) * 8, 9, -8); }
+        if (P.y - ctx.carGround(P.s, P.d) < 0.9) { c.hit = true; P.v *= 0.72; P.shake = 0.4; ctx.damage?.(5, '낙하물'); ctx.floatText(def.dropHit || (ground ? '가격 파괴!' : '콘 충돌!')); ctx.blip(300, 100, 0.2, 'square', 0.12); c.flyV = new THREE.Vector3((Math.random() - 0.5) * 8, 9, -8); }
       }
       if (c.hit && c.flyV) { c.flyV.y -= 30 * dt; c.y += c.flyV.y * dt; c.d += c.flyV.x * dt; c.s += (P.v + 6) * dt; }
     }

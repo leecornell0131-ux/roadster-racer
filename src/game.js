@@ -10,6 +10,7 @@ import { createBoss } from './boss.js';
 import { loadProps, prop, propCredits, failed as loadFailed } from './props.js';
 import { loadHeads, portraits, headCredits } from './heads.js';
 import { STAGES, ORDER } from './stages/index.js';
+import { createMission } from './missions.js';
 
 // ---------- quality ----------
 const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -18,13 +19,28 @@ const Q = IS_MOBILE
   : { pr: Math.min(devicePixelRatio, 2), shadow: 2048, bStep: 17, bloomRes: 1 };
 
 // ---------- stage ----------
-const STAGE_KEY = 'roadster-racer-stage';
-const ST = (() => {
+// A stage is a region; its events (stage.events) are the campaign's chapters' parts. Each event is a full
+// track of its own: it overrides any stage field (finish, ramps, traffic, boss, radio, texts) and adds a mission.
+const STAGE_KEY = 'roadster-racer-stage', EVENT_KEY = 'roadster-racer-event';
+const BASE = (() => {
   let id = new URLSearchParams(location.search).get('stage');
   if (!STAGES[id]) try { id = localStorage.getItem(STAGE_KEY); } catch {}
   return STAGES[id] || ORDER[0];
 })();
-function goStage(id) { try { localStorage.setItem(STAGE_KEY, id); } catch {} location.reload(); }
+const EVENTS = BASE.events || [{ id: 'run', name: BASE.name }];
+const EV_I = (() => {
+  let i = parseInt(new URLSearchParams(location.search).get('ev'), 10);
+  if (!(i >= 0)) try { const v = JSON.parse(localStorage.getItem(EVENT_KEY) || 'null'); if (v?.stage === BASE.id) i = v.i; } catch {}
+  return Math.min(EVENTS.length - 1, Math.max(0, i || 0));
+})();
+const EV = EVENTS[EV_I];
+const ST = { ...BASE, ...EV, id: BASE.id, name: BASE.name, event: EV, evIndex: EV_I, evKey: `${BASE.id}:${EV.id}`,
+  text: { ...BASE.text, ...EV.text }, lines: { ...BASE.lines, ...EV.lines }, env: { ...BASE.env, ...EV.env } };
+function goStage(id, i = 0) {
+  try { localStorage.setItem(STAGE_KEY, id); localStorage.setItem(EVENT_KEY, JSON.stringify({ stage: id, i })); } catch {}
+  const u = new URL(location.href); u.searchParams.delete('stage'); u.searchParams.delete('ev');
+  if (u.toString() === location.href) location.reload(); else location.href = u.toString();
+}
 
 // ---------- tuning ----------
 const G = ST.gravity ?? 32;            // m/s², low on the space stages
@@ -47,7 +63,8 @@ export const CAST = {
 const SAVE_KEY = 'roadster-racer-save-v1';
 const save = loadSave();
 function loadSave() {
-  const base = () => ({ level: 1, xp: 0, doge: 0, best: 0, bests: {}, up: { magnet: 0, tank: 0, comp: 0, motor: 0 } });
+  // camp: per event key ('austin:deliver') { done, stars, best, score, play (seconds actually played), tries }
+  const base = () => ({ level: 1, xp: 0, doge: 0, best: 0, bests: {}, camp: {}, play: 0, hp: 100, parts: 3, partsT: Date.now(), up: { magnet: 0, tank: 0, comp: 0, motor: 0, armor: 0, optimus: 0 } });
   try {
     const s = Object.assign(base(), JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); s.up = Object.assign(base().up, s.up);
     if (s.best && !s.bests.austin) s.bests.austin = s.best; // v1 saves kept one best time (Austin)
@@ -59,6 +76,36 @@ let saveTimer = 0;
 function writeSaveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(writeSave, 800); }
 function writeSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} }
 const xpNeed = (lv) => 100 + (lv - 1) * 80;
+// ---------- body damage + repair parts ----------
+// Hard landings, crashes, boss hits and falls wear the body down (it carries over between runs). The bar has
+// three bands like a Terran building: green, yellow (sparks), red (battery fire: it keeps burning down slowly
+// and costs top speed). It never stops you finishing. Repairs cost parts: wrench pickups on the track, event
+// clears, and one free part every 5 minutes (up to 10). Optimus riding along patches you up to the green line.
+const PART_EVERY = 5 * 60 * 1000, PART_MAX = 10, PART_FRAC = 0.25;
+const GREEN = 0.6, RED = 0.3;
+const hpMax = () => 100 + (save.up.armor || 0) * 20;
+const hpF = () => save.hp / hpMax();
+const hpZone = () => (hpF() >= GREEN ? 'green' : hpF() >= RED ? 'yellow' : 'red');
+function grantParts() {
+  const n = Math.floor((Date.now() - (save.partsT || 0)) / PART_EVERY);
+  if (save.parts >= PART_MAX) { save.partsT = Date.now(); return 0; }
+  if (n > 0) { const add = Math.min(n, PART_MAX - save.parts); save.parts += add; save.partsT += n * PART_EVERY; if (save.parts >= PART_MAX) save.partsT = Date.now(); writeSaveSoon(); return add; }
+  return 0;
+}
+const hpSpeed = () => (hpF() >= RED ? 1 : 0.78 + 0.22 * hpF() / RED);
+function repair(withDoge) {
+  if (save.hp >= hpMax()) return false;
+  if (withDoge) { const cost = 120; if (save.doge < cost) return false; save.doge -= cost; } else { if (save.parts < 1) return false; save.parts--; }
+  save.hp = Math.min(hpMax(), save.hp + hpMax() * PART_FRAC); writeSave(); return true;
+}
+// during a run: the fire burns, Optimus repairs
+function stepBody(dt) {
+  const z = hpZone(), was = save.hp;
+  if (z === 'red' && save.hp > 0) save.hp = Math.max(0, save.hp - 0.55 * dt);
+  const opt = save.up.optimus || 0;
+  if (opt && hpF() < GREEN) save.hp = Math.min(hpMax() * GREEN, save.hp + (0.35 + 0.35 * opt) * dt);
+  if (was > 0 && save.hp <= 0) toast('배터리 전소 직전!', '최고속도 -22% · 개러지에서 수리', '#ff3d6e');
+}
 // ---------- upgrades (X Garage) ----------
 // cost(lv) is the price of the next level; Dogecoin only (soft currency).
 const UPGRADES = {
@@ -66,23 +113,97 @@ const UPGRADES = {
   tank: { name: '압축공기 탱크', desc: (l) => `점프 최대 +${l}회`, max: 4, cost: (l) => Math.round(180 * Math.pow(1.9, l)) },
   comp: { name: '컴프레서', desc: (l) => `점프 충전 ${recharge(l).toFixed(1)}초`, max: 5, cost: (l) => Math.round(90 * Math.pow(1.65, l)) },
   motor: { name: '듀얼 모터', desc: (l) => `최고속도 +${l * 4 * 3.6 | 0}km/h`, max: 6, cost: (l) => Math.round(110 * Math.pow(1.6, l)) },
+  armor: { name: '배터리 팩 보강', desc: (l) => `최대 내구도 ${100 + l * 20}`, max: 5, cost: (l) => Math.round(150 * Math.pow(1.7, l)) },
+  optimus: { name: '옵티머스 동승 정비', desc: (l) => (l ? `옵티머스가 옆자리에서 초당 ${(0.35 + 0.35 * l).toFixed(2)}씩 수리 · 초록 구간까지만` : '옵티머스가 옆자리에 타서 달리는 중에 고쳐 줘요 · 초록 구간까지만'), max: 3, cost: (l) => Math.round(400 * Math.pow(2, l)) },
 };
 const magnetRange = (l = save.up.magnet) => 3 + l * 1.6 + (save.level - 1) * 0.15;
 const recharge = (l = save.up.comp) => 8 - l * 0.9;
 const maxCharges = () => Math.min(12, 2 + save.level + save.up.tank);
 
 // ---------- track geometry ----------
-const cx = ST.cx;
+// Two kinds of track. Old stages give cx(s): a lateral wiggle on a road that runs along -z. Tracks with
+// `turns` are laid out by heading instead, so they can take real corners, interchange loops and hairpins:
+// turns = [{ s (corner middle), a (radians, + = left), r (radius m) }]. Both end up in the same table.
+const cx = ST.cx || (() => 0);
 // road height above sea level along the track; every y in track space is measured from it
 const elev = ST.elev || (() => 0);
 const elevSlope = (s) => elev(s + 0.5) - elev(s - 0.5);
 const _f = new THREE.Vector3(), _r = new THREE.Vector3();
+const TURNS = ST.turns || null;
+// curvature (1/m, + = left) at s
+function curvature(s) {
+  if (!TURNS) { const d1 = cx(s + 1) - cx(s - 1), d2 = cx(s + 1) - 2 * cx(s) + cx(s - 1); return -d2 / Math.pow(1 + (d1 / 2) ** 2, 1.5); }
+  let k = 0; for (const t of TURNS) { const L = Math.abs(t.a) * t.r; if (Math.abs(s - t.s) < L / 2) k += t.a / L; } return k;
+}
+const TRACK = TURNS && (() => {
+  const s0 = -600, n = Math.ceil((ST.finish + 1600 - s0)), xs = new Float64Array(n + 1), zs = new Float64Array(n + 1), hs = new Float64Array(n + 1);
+  let x = 0, z = 0, h = 0; // start at the origin facing -z
+  // integrate back from 0 to s0 first so s = 0 sits at the origin
+  const at = (i) => s0 + i;
+  const i0 = -s0;
+  xs[i0] = 0; zs[i0] = 0; hs[i0] = 0;
+  for (let i = i0 + 1; i <= n; i++) { const sm = at(i) - 0.5; h += curvature(sm); x += -Math.sin(h - curvature(sm) / 2); z += -Math.cos(h - curvature(sm) / 2); xs[i] = x; zs[i] = z; hs[i] = h; }
+  x = 0; z = 0; h = 0;
+  for (let i = i0 - 1; i >= 0; i--) { const sm = at(i) + 0.5; h -= curvature(sm); x -= -Math.sin(h + curvature(sm) / 2); z -= -Math.cos(h + curvature(sm) / 2); xs[i] = x; zs[i] = z; hs[i] = h; }
+  return { s0, n, xs, zs, hs };
+})();
 function frame(s) {
+  if (TRACK) {
+    const u = THREE.MathUtils.clamp(s - TRACK.s0, 0, TRACK.n - 1), i = Math.floor(u), t = u - i;
+    const h = TRACK.hs[i] + (TRACK.hs[i + 1] - TRACK.hs[i]) * t;
+    _f.set(-Math.sin(h), 0, -Math.cos(h)); _r.set(Math.cos(h), 0, -Math.sin(h));
+    return { x: TRACK.xs[i] + (TRACK.xs[i + 1] - TRACK.xs[i]) * t, z: TRACK.zs[i] + (TRACK.zs[i + 1] - TRACK.zs[i]) * t, f: _f, r: _r, yaw: h };
+  }
   const dx = (cx(s + 0.5) - cx(s - 0.5));
   const L = Math.hypot(dx, 1);
   _f.set(dx / L, 0, -1 / L);
   _r.set(1 / L, 0, dx / L);
   return { x: cx(s), z: -s, f: _f, r: _r, yaw: Math.atan2(-_f.x, -_f.z) };
+}
+// forks: at a big corner the road splits. The main road takes the corner tight; an exit lane on the outside
+// swings wide around it on its own carriageway and merges back after. It is a real, longer road (the car
+// covers more ground per metre of track out there), so missing the turn costs time, never the run.
+// forks = [{ at: s of a turn, off: widest gap from the main road (m), name }]
+const FORK_W = 6, FORK_LEAD = 150, FORK_OPEN = 90;
+const smooth01 = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+const FORKS = (TURNS ? ST.forks || [] : []).map((f, id) => {
+  const t = TURNS.find((u) => u.s === f.at), L = Math.abs(t.a) * t.r, off = f.off ?? 50;
+  const s0 = t.s - L / 2 - FORK_LEAD, s1 = t.s + L / 2 + FORK_LEAD;
+  const gap = (s) => (s <= s0 || s >= s1 ? 0 : off * Math.min(smooth01((s - s0) / FORK_LEAD), smooth01((s1 - s) / FORK_LEAD)));
+  // the exit lane opens 90..60 m before the split and closes 60..90 m after the merge
+  const laneW = (s) => 2 * FORK_W * Math.min(smooth01((s - (s0 - FORK_OPEN)) / 30), smooth01((s1 + FORK_OPEN - s) / 30));
+  const inner = (s) => ROAD_HALF + gap(s), outer = (s) => inner(s) + laneW(s);
+  return { ...f, id, turn: t, side: Math.sign(t.a), s0, s1, a: s0 - FORK_OPEN, b: s1 + FORK_OPEN, off, gap, laneW, inner, outer };
+});
+const forkAt = (s) => FORKS.find((f) => s > f.a && s < f.b) || null;
+// true where (s, d) is taken by a fork's lane, island or verge: scenery stays out
+const forkZone = (s, d, pad = 4) => FORKS.some((f) => s > f.a - pad && s < f.b + pad && d * f.side > ROAD_HALF - 1 && d * f.side < ROAD_HALF + f.off + 2 * FORK_W + pad);
+// stretches [a, b] of one road side with the forks on that side cut out
+function sideRuns(a, b, side) {
+  const out = []; let x = a;
+  for (const f of FORKS.filter((f) => f.side === side).sort((p, q) => p.a - q.a)) { if (f.b < x || f.a > b) continue; if (f.a > x) out.push([x, f.a]); x = Math.max(x, f.b); }
+  if (x < b) out.push([x, b]);
+  return out;
+}
+// on a track that bends back on itself (hairpins, loops) the scenery beside one stretch can sit on another
+// stretch's road: anything placed with clearOfRoad() checks every bit of road, not just its own
+const roadGrid = TRACK && (() => {
+  const g = new Map(), C = 24;
+  const put = (x, z) => { const k = `${Math.floor(x / C)},${Math.floor(z / C)}`; (g.get(k) || g.set(k, []).get(k)).push(x, z); };
+  for (let s = -300; s < ST.finish + 700; s += 4) { const f = frame(s); put(f.x, f.z); }
+  // fork lanes and the island inside them count as road
+  for (const fk of FORKS) for (let s = fk.a; s < fk.b; s += 4) for (let d = ROAD_HALF + 8; d < fk.outer(s) + 6; d += 12) { const f = frame(s); put(f.x + f.r.x * d * fk.side, f.z + f.r.z * d * fk.side); }
+  return { g, C };
+})();
+function clearOfRoad(x, z, r) {
+  if (!roadGrid) return true;
+  const { g, C } = roadGrid, R = ROAD_HALF + 3 + r, n = Math.ceil(R / C);
+  const cx0 = Math.floor(x / C), cz0 = Math.floor(z / C);
+  for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) {
+    const pts = g.get(`${cx0 + i},${cz0 + j}`); if (!pts) continue;
+    for (let q = 0; q < pts.length; q += 2) if ((pts[q] - x) ** 2 + (pts[q + 1] - z) ** 2 < R * R) return false;
+  }
+  return true;
 }
 function world(s, d, y, out = new THREE.Vector3()) {
   const fr = frame(s);
@@ -226,18 +347,24 @@ function photo(url, { srgb = true, rep = [1, 1], onload } = {}) {
 }
 // lane paint drawn over real asphalt: one canvas tile = the road's width x 24 m
 const ROAD = ST.road || {};
-function drawRoad(g, w, h, asphalt) {
-  const tiles = Math.max(4, Math.round(ROAD_HALF / 3));
+function drawRoad(g, w, h, asphalt, R = ROAD, half = ROAD_HALF) {
+  const tiles = Math.max(2, Math.round(half / 3));
   if (asphalt) { for (let x = 0; x < tiles; x++) for (let y = 0; y < 4; y++) g.drawImage(asphalt, x * w / tiles, y * h / 4, w / tiles + 1, h / 4 + 1); g.fillStyle = ROAD.tint || 'rgba(20,16,26,0.35)'; g.fillRect(0, 0, w, h); }
   else { g.fillStyle = '#26222b'; g.fillRect(0, 0, w, h); }
-  const lw = 0.15 / (ROAD_HALF * 2) * w; // 15 cm lines
+  const lw = 0.15 / (half * 2) * w; // 15 cm lines
   const paint = (c, x, y0, ww, hh) => { g.fillStyle = c; g.globalAlpha = 0.88; g.fillRect(x, y0, ww, hh); g.globalAlpha = 1; };
   paint('#e9e4f0', w * 0.012, 0, lw, h); paint('#e9e4f0', w * 0.988 - lw, 0, lw, h);
-  for (const u of ROAD.dashes || [0.25, 0.75]) paint('#e9e4f0', w * u - lw / 2, 0, lw, h * 0.4);
-  if (ROAD.yellow ?? true) { paint('#ffc83d', w * 0.5 - lw * 1.5, 0, lw, h); paint('#ffc83d', w * 0.5 + lw * 0.5, 0, lw, h); }
+  for (const u of R.dashes || [0.25, 0.75]) paint('#e9e4f0', w * u - lw / 2, 0, lw, h * 0.4);
+  if (R.yellow ?? true) { paint('#ffc83d', w * 0.5 - lw * 1.5, 0, lw, h); paint('#ffc83d', w * 0.5 + lw * 0.5, 0, lw, h); }
 }
 const roadTex = canvasTex(1024, 1024, (g, w, h) => drawRoad(g, w, h), true);
-photo(`${ROAD.tex || 'asphalt'}_diff.jpg`, { onload: (t) => { const c = roadTex.image; drawRoad(c.getContext('2d'), c.width, c.height, t.image); roadTex.needsUpdate = true; } });
+// fork lanes: two lanes, one dashed line
+const BRANCH = { ...ROAD, dashes: [0.5], yellow: false };
+const branchTex = FORKS.length ? canvasTex(512, 1024, (g, w, h) => drawRoad(g, w, h, null, BRANCH, FORK_W), true) : null;
+photo(`${ROAD.tex || 'asphalt'}_diff.jpg`, { onload: (t) => {
+  const c = roadTex.image; drawRoad(c.getContext('2d'), c.width, c.height, t.image); roadTex.needsUpdate = true;
+  if (branchTex) { const b = branchTex.image; drawRoad(b.getContext('2d'), b.width, b.height, t.image, BRANCH, FORK_W); branchTex.needsUpdate = true; }
+} });
 const hazardTex = canvasTex(128, 128, (g, w, h) => {
   g.fillStyle = '#ffc400'; g.fillRect(0, 0, w, h); g.fillStyle = '#141414';
   for (let i = -w; i < w * 2; i += 32) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 16, 0); g.lineTo(i + 16 - h, h); g.lineTo(i - h, h); g.fill(); }
@@ -264,7 +391,7 @@ function ribbon(s0, s1, dL, dR, step, yFn, uvLen = 0) {
   for (let i = 0; i <= segs; i++) {
     const s = s0 + (s1 - s0) * i / segs;
     for (let j = 0; j < 2; j++) {
-      const d = j ? dR : dL;
+      const d = j ? (typeof dR === 'function' ? dR(s) : dR) : (typeof dL === 'function' ? dL(s) : dL);
       world(s, d, yFn(s, d), v); pos.push(v.x, v.y, v.z);
       uv.push(j, uvLen ? s / uvLen : i / segs);
     }
@@ -282,9 +409,9 @@ function wall(s0, s1, d, step, y0Fn, y1Fn, uvLen = 1) {
   const pos = [], uv = [], idx = [], v = new THREE.Vector3();
   for (let i = 0; i <= segs; i++) {
     const s = s0 + (s1 - s0) * i / segs;
-    const a0 = y0Fn(s), a1 = y1Fn(s);
-    world(s, d, a0, v); pos.push(v.x, v.y, v.z); uv.push(s / uvLen, a0 / uvLen);
-    world(s, d, a1, v); pos.push(v.x, v.y, v.z); uv.push(s / uvLen, a1 / uvLen);
+    const a0 = y0Fn(s), a1 = y1Fn(s), dd = typeof d === 'function' ? d(s) : d;
+    world(s, dd, a0, v); pos.push(v.x, v.y, v.z); uv.push(s / uvLen, a0 / uvLen);
+    world(s, dd, a1, v); pos.push(v.x, v.y, v.z); uv.push(s / uvLen, a1 / uvLen);
     if (i < segs) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
   }
   const geo = new THREE.BufferGeometry();
@@ -349,7 +476,45 @@ function buildWorld() {
   // start + finish lines
   const checker = canvasTex(256, 64, (g, w, h) => { for (let x = 0; x < 16; x++) for (let y = 0; y < 4; y++) { g.fillStyle = (x + y) % 2 ? '#111' : '#f4f4f4'; g.fillRect(x * 16, y * 16, 16, 16); } });
   for (const s of [12, FINISH_S]) scene.add(new THREE.Mesh(ribbon(s, s + 3, -ROAD_HALF, ROAD_HALF, 3, () => 0.02), new THREE.MeshStandardMaterial({ map: checker, roughness: 0.6 })));
+  // checkpoint gates: two glowing posts at the road edges
+  const postGeo = new THREE.CylinderGeometry(0.16, 0.16, 3.2, 8); postGeo.translate(0, 1.6, 0);
+  const postMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 2.4, 3.2), toneMapped: false });
+  for (const c of CHECKS) for (const d of [-ROAD_HALF + 0.3, ROAD_HALF - 0.3]) { const m = new THREE.Mesh(postGeo, postMat); world(c, d, 0, m.position); scene.add(m); }
+  for (const fk of FORKS) buildFork(fk);
   ST.build(kit);
+}
+function buildFork(fk) {
+  const sd = fk.side, inn = (s) => sd * fk.inner(s), out = (s) => sd * fk.outer(s);
+  const [L, R] = sd > 0 ? [inn, out] : [out, inn];
+  const mat = M.road.clone(); mat.map = branchTex; mat.side = THREE.DoubleSide;
+  const lane = new THREE.Mesh(ribbon(fk.a, fk.b, L, R, 2, () => 0.004, 24), mat);
+  lane.receiveShadow = true; scene.add(lane);
+  // the island between the carriageways, with kerbs on both sides and along the outer edge
+  const isl = (s) => sd * (ROAD_HALF + 0.05), isr = (s) => sd * (fk.inner(s) - 0.05);
+  const [IL, IR] = sd > 0 ? [isl, isr] : [isr, isl];
+  const island = new THREE.Mesh(ribbon(fk.s0 + 6, fk.s1 - 6, IL, IR, 3, () => 0.14, 8), M.walk); island.receiveShadow = true; scene.add(island);
+  const grass = new THREE.MeshStandardMaterial({ color: '#4c5b34', roughness: 1 });
+  const gl = (s) => sd * (ROAD_HALF + Math.min(1.6, fk.gap(s) / 2)), gr = (s) => sd * (fk.inner(s) - Math.min(1.6, fk.gap(s) / 2));
+  scene.add(new THREE.Mesh(ribbon(fk.s0 + 12, fk.s1 - 12, sd > 0 ? gl : gr, sd > 0 ? gr : gl, 3, () => 0.16, 8), grass));
+  for (const [d, a, b] of [[(s) => sd * (ROAD_HALF + 0.15), fk.s0 + 4, fk.s1 - 4], [(s) => sd * (fk.inner(s) - 0.15), fk.s0 + 4, fk.s1 - 4], [(s) => sd * (fk.outer(s) + 0.2), fk.a + 20, fk.b - 20]]) scene.add(new THREE.Mesh(wall(a, b, d, 2, () => 0, () => 0.55, 2), M.concrete));
+  // lamps on the island side of the long way round (the outside is where the chase camera swings), so it reads as a real road at night
+  const lampAt = []; for (let s = fk.s0 + 20; s < fk.s1 - 20; s += 28) if (fk.gap(s) > 5) lampAt.push(s);
+  const pole = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.12, 0.16, 7, 6).translate(0, 3.5, 0), M.concrete, lampAt.length);
+  const bulb = new THREE.InstancedMesh(new THREE.SphereGeometry(0.38, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 2.4, 1.5), toneMapped: false }), lampAt.length);
+  const m4 = new THREE.Matrix4(), v = new THREE.Vector3();
+  lampAt.forEach((s, i) => { world(s, sd * (fk.inner(s) - 1.1), 0.15, v); m4.makeTranslation(v.x, v.y, v.z); pole.setMatrixAt(i, m4); world(s, sd * (fk.inner(s) + 0.3), 7, v); m4.makeTranslation(v.x, v.y, v.z); bulb.setMatrixAt(i, m4); });
+  scene.add(pole, bulb);
+  // gore point: hazard chevrons where the lanes part and meet
+  for (const s of [fk.s0 + 3, fk.s1 - 3]) { const g = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.1, 0.3), M.ramp); world(s, sd * (ROAD_HALF + 0.8), 0.55, g.position); g.rotation.y = frame(s).yaw; g.castShadow = true; scene.add(g); }
+  // overhead signs: the main road is the turn, the exit lane is the long way round
+  const t = fk.turn, word = t.a > 0 ? '좌회전' : '우회전';
+  const signAt = (s, d, text, bg) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(9, 2.4), new THREE.MeshBasicMaterial({ map: textTex(text, '#ffffff', { w: 1024, h: 270, size: 92, bg, glow: 4 }), side: THREE.DoubleSide, toneMapped: false }));
+    m.material.color.setScalar(1.15); world(s, d, 7.4, m.position); m.lookAt(world(s - 40, d, 7.4)); scene.add(m);
+    const pole = new THREE.Mesh(new THREE.BoxGeometry(0.4, 7.6, 0.4), M.concrete); world(s + 0.3, d + 4.8 * (d > 0 ? 1 : -1), 3.8, pole.position); scene.add(pole);
+  };
+  signAt(fk.a + 10, sd * -4, `${t.a > 0 ? '↰' : '↱'} ${fk.name || word}`, '#0b5a2a');
+  signAt(fk.a + 10, sd * (ROAD_HALF + FORK_W), `${t.a > 0 ? '↗' : '↖'} 우회로 · 합류`, '#5a4a0b');
 }
 function finishArch(text) {
   const archMat = new THREE.MeshStandardMaterial({ color: '#1a1a22', metalness: 0.8, roughness: 0.3 });
@@ -414,6 +579,7 @@ function facadeMat(f) {
 function placeBuildings(kinds) {
   const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, 0.5, 0);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color();
+  if (roadGrid) kinds = kinds.map((list) => list.filter((b) => { world(b.s, b.d, 0, p); return clearOfRoad(p.x, p.z, Math.max(b.w, b.dp) * 0.55); }));
   kinds.forEach((list, k) => {
     if (!list.length) return;
     const inst = new THREE.InstancedMesh(geo, facadeMat(FACADES[k]), list.length);
@@ -426,7 +592,7 @@ function placeBuildings(kinds) {
     scene.add(inst);
   });
 }
-const kit = { THREE, scene, sky, prop, Q, IS_MOBILE, M, world, frame, elev, ribbon, wall, crossWall, grid, photo, canvasTex, textTex, addBillboard, FACADES, facadeMat, placeBuildings, finishArch };
+const kit = { ST, clearOfRoad, forkZone, sideRuns, FORKS, curvature, THREE, scene, sky, prop, Q, IS_MOBILE, M, world, frame, elev, ribbon, wall, crossWall, grid, photo, canvasTex, textTex, addBillboard, FACADES, facadeMat, placeBuildings, finishArch };
 
 // ---------- vehicles ----------
 // ---------- pickups ----------
@@ -436,6 +602,7 @@ const PICK = {
   h100: { r: 1.8, xp: 50, label: 'H100 +50 EXP' },
   legend: { r: 2.2, xp: 200, label: '전설의 블랙웰 칩 +200 EXP' },
   air: { r: 1.6 },
+  wrench: { r: 1.8 },
 };
 const pickupProtos = (() => {
   const coinFace = textTex('Ð', '#6b4300', { w: 128, h: 128, size: 100, glow: 0, bg: '#ffc83d' });
@@ -448,7 +615,14 @@ const pickupProtos = (() => {
   const air = new THREE.Group();
   air.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.9, 6, 14), new THREE.MeshPhysicalMaterial({ color: '#2b7cff', metalness: 0.6, roughness: 0.2, clearcoat: 1 })));
   const band = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.06, 6, 20), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 2.6, 3.4), toneMapped: false })); band.rotation.x = Math.PI / 2; air.add(band);
-  return { coin, gpu, h100, legend, air };
+  // repair part: an orange wrench in a soft halo
+  const wrench = new THREE.Group();
+  const steel = new THREE.MeshStandardMaterial({ color: '#ff8a2a', metalness: 0.8, roughness: 0.3, emissive: '#a84300', emissiveIntensity: 0.6 });
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.26, 1.3, 0.12), steel); wrench.add(shaft);
+  for (const y of [-0.75, 0.75]) { const head = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.1, 8, 16, Math.PI * 1.5), steel); head.position.y = y; head.rotation.z = y > 0 ? -Math.PI * 0.25 : Math.PI * 0.75; wrench.add(head); }
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.05, 6, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 1.4, 0.3), toneMapped: false })); wrench.add(halo);
+  wrench.rotation.z = 0.5;
+  return { coin, gpu, h100, legend, air, wrench };
 })();
 
 // ---------- particles ----------
@@ -505,6 +679,14 @@ const coldGas = (() => {
   return g;
 })();
 function updateColdGas(dt, time) {
+  if (state === 'race') {
+    const z = hpZone();
+    if (z === 'red') { // battery fire under the floor: flames, then thick smoke
+      const at = () => world(P.s + 0.4 + Math.random() * 1.6, P.d + (Math.random() - 0.5) * 1.4, P.y + 0.35);
+      if (Math.random() < 0.8) puff(at(), new THREE.Vector3((Math.random() - 0.5) * 2, 4 + Math.random() * 2, (Math.random() - 0.5) * 2), Math.random() < 0.5 ? '#ff7a1a' : '#ffc23d', 0.55, 0.35);
+      if (Math.random() < 0.5) puff(at(), new THREE.Vector3((Math.random() - 0.5) * 2, 3.5, (Math.random() - 0.5) * 2), '#2a2a2e', 1.1, 1.1);
+    } else if (z === 'yellow' && Math.random() < 0.12) puff(world(P.s + (Math.random() - 0.5) * 3, P.d + (Math.random() < 0.5 ? -1 : 1) * 0.9, P.y + 0.3), new THREE.Vector3((Math.random() - 0.5) * 6, 3 + Math.random() * 3, (Math.random() - 0.5) * 6), '#fff2a8', 0.18, 0.3);
+  }
   const on = state === 'race' && (P.launchT > 0 || P.boostT > 0);
   const u = coldGas.userData; u.amt += ((on ? 1 : 0) - u.amt) * Math.min(1, dt * (on ? 18 : 6));
   coldGas.visible = u.amt > 0.02;
@@ -526,16 +708,18 @@ const radioQueue = [];
 const radioFlags = new Set();
 
 function resetRace() {
-  Object.assign(P, { s: 0, d: 3, y: 0, v: 0, vy: 0, grounded: true, charges: maxCharges(), recharge: 0, fuel: AIR_FUEL, slope: 0, air: 0, boostT: 0, boostG: 30, crashT: 0, shake: 0, steerVis: 0, roll: 0, rollTo: 0, rollDir: 1, finished: false, coil: 0, bonkT: 0, roofRun: 0, lastG: 0, kG: 0, slipT: 0, slipV: 0, heat: 0, overheat: 0, launchT: 0, t100: 0 });
+  Object.assign(P, { s: 0, d: 3, y: 0, v: 0, vy: 0, grounded: true, charges: maxCharges(), recharge: 0, fuel: AIR_FUEL, slope: 0, air: 0, boostT: 0, boostG: 30, crashT: 0, shake: 0, steerVis: 0, roll: 0, rollTo: 0, rollDir: 1, finished: false, coil: 0, bonkT: 0, roofRun: 0, lastG: 0, kG: 0, slipT: 0, slipV: 0, heat: 0, overheat: 0, launchT: 0, t100: 0, cp: 0, cpI: 0, combo: 0, comboT: 0, comboBest: 0, score: 0, lastThrust: -9, nearMiss: 0 });
   boss?.reset(); for (const sh of gunShots) sh.m.visible = sh.live = false;
   raceT = 0; penalty = 0; swarmDone = false;
-  Object.assign(stats, { perfect: 0, coins: 0, xpGain: 0, dogeGain: 0, jumpsOver: 0, roofs: 0 });
+  Object.assign(stats, { perfect: 0, good: 0, coins: 0, xpGain: 0, dogeGain: 0, jumpsOver: 0, roofs: 0, nearMiss: 0, crashes: 0, falls: 0, damage: 0, parts: 0 });
   radioFlags.clear(); radioQueue.length = 0;
   for (const t of traffic) if (t.mesh) scene.remove(t.mesh);
   for (const f of jamFleets) scene.remove(f);
   for (const p of pickups) scene.remove(p.mesh);
   PUDDLES.length = 0; PUDDLES.push(...(ST.puddles || []));
   spawnTraffic(); spawnPickups();
+  missionObjs.forEach((o) => scene.remove(o)); missionObjs.length = 0;
+  mission = createMission(MISSION, missionCtx);
 }
 // who's on the road: real car models where they loaded, procedural stand-ins otherwise
 const TRAFFIC = ST.traffic;
@@ -574,8 +758,9 @@ function addTraffic(type, s, d, opts = {}) {
   const mesh = opts.parked ? null : trafficMesh(type, opts.color);
   const sz = mesh ? mesh.userData.size : trafficProtos[type].userData.size;
   const base = opts.v ?? def.speed[0] + Math.random() * (def.speed[1] - def.speed[0]);
-  const t = { type, name: opts.name || def.name, brakes: !!def.brakes && !opts.parked, hl: sz.z / 2, hw: sz.x / 2, h: Math.min(sz.y, 3.6), s, d, dT: d, y: 0, base, v: opts.parked ? 0 : base, brakeT: 0, cool: 0, over: false, mesh, parked: !!opts.parked, temp: !!opts.temp, copy: !!opts.copy, copyT: 0 };
+  const t = { type, name: opts.name || def.name, brakes: !!def.brakes && !opts.parked, hl: sz.z / 2, hw: sz.x / 2, h: Math.min(sz.y, 3.6), s, d, dT: d, y: 0, base, v: opts.parked ? 0 : base, brakeT: 0, cool: 0, over: false, mesh, parked: !!opts.parked, temp: !!opts.temp, copy: !!opts.copy, copyT: 0, signals: !!def.signal && !opts.parked };
   if (mesh) scene.add(mesh);
+  if (t.signals && mesh) addBlinkers(t);
   traffic.push(t);
   return t;
 }
@@ -655,6 +840,8 @@ function spawnPickups() {
     if (r.dR - r.dL < 20) addPickup('h100', r.s0 + r.len + 18, d, r.h + 2.2);
     addPickup('air', r.s0 - 45, d, 1.2);
   }
+  // repair parts, a few per track, in an outside lane
+  for (let s = 700; s < FINISH_S - 200; s += 1100 + Math.random() * 300) if (!nearGap(s)) addPickup('wrench', s, LANES[Math.random() < 0.5 ? 0 : LANES.length - 1], 1.3);
   if (ST.legend) addPickup('legend', ST.legend.s, ST.legend.d, ST.legend.y);   // only reachable with ramp + jump
   for (const [type, ps, pd, py] of ST.pickups || []) addPickup(type, ps, pd, py);
   // coin arcs over gaps
@@ -674,7 +861,7 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => { const k = KEYMAP[e.code]; if (k) input[k] = false; });
 for (const btn of document.querySelectorAll('[data-key]')) {
   const k = btn.dataset.key;
-  const on = (e) => { e.preventDefault(); if (k === 'jump' && !input.jump) input.jumpEdge = true; if (k === 'fire' && !input.fire) input.fireEdge = true; input[k] = true; btn.classList.add('down'); };
+  const on = (e) => { e.preventDefault(); haptic(k === 'jump' ? 'jump' : 'tap'); if (k === 'jump' && !input.jump) input.jumpEdge = true; if (k === 'fire' && !input.fire) input.fireEdge = true; input[k] = true; btn.classList.add('down'); };
   const off = (e) => { e.preventDefault(); input[k] = false; btn.classList.remove('down'); };
   btn.addEventListener('pointerdown', on); btn.addEventListener('pointerup', off);
   btn.addEventListener('pointercancel', off); btn.addEventListener('pointerleave', off);
@@ -756,9 +943,110 @@ function updateAudio() {
 }
 document.getElementById('mute').addEventListener('click', () => { muted = !muted; document.getElementById('mute').textContent = muted ? '소리 끔' : '소리 켬'; });
 
+// ---------- haptics ----------
+// Android browsers: the Vibration API. iOS Safari has none; flipping a hidden <input switch> plays the
+// system's selection tick there (iOS 18+, only inside a touch). A native build swaps this for the OS haptics.
+const HAPTIC = { tap: 7, jump: 12, land: [10, 30, 14], perfect: [10, 25, 10, 25, 22], hard: 45, crash: [45, 30, 30], hit: 55, check: 9, warn: [30, 60, 30, 60, 30], fork: [8, 40, 8] };
+let hapticSw = null;
+function haptic(kind) {
+  if (!IS_MOBILE || save.haptic === false) return;
+  const pat = HAPTIC[kind] ?? kind;
+  if (navigator.vibrate) { try { navigator.vibrate(pat); } catch {} return; }
+  if (!hapticSw) {
+    hapticSw = document.createElement('label'); hapticSw.setAttribute('aria-hidden', 'true');
+    hapticSw.style.cssText = 'position:fixed;left:-100px;top:0;width:1px;height:1px;opacity:0;pointer-events:none';
+    const i = document.createElement('input'); i.type = 'checkbox'; i.setAttribute('switch', ''); i.tabIndex = -1; hapticSw.append(i); document.body.append(hapticSw);
+  }
+  const ticks = Array.isArray(pat) ? Math.ceil(pat.length / 2) : 1;
+  for (let i = 0; i < ticks; i++) setTimeout(() => hapticSw.click(), i * 70);
+}
+const vibLabel = () => { document.getElementById('vib').textContent = save.haptic === false ? '진동 끔' : '진동 켬'; };
+document.getElementById('vib').addEventListener('click', () => { save.haptic = save.haptic === false; writeSaveSoon(); vibLabel(); haptic('land'); });
+vibLabel();
+if (!IS_MOBILE) document.getElementById('vib').hidden = true;
+
+// ---------- pause ----------
+let paused = false;
+function setPause(on) {
+  if (on && state !== 'race') return;
+  paused = on; document.getElementById('pause').hidden = !on;
+  if (AC) on ? AC.suspend() : AC.resume();
+  for (const k of ['left', 'right', 'jump', 'brake', 'boost', 'fire']) input[k] = false;
+  input.axis = 0;
+}
+document.getElementById('pauseBtn').addEventListener('click', () => { haptic('tap'); setPause(true); });
+document.getElementById('resumeBtn').addEventListener('click', () => setPause(false));
+document.getElementById('restartBtn').addEventListener('click', () => { setPause(false); startRace(); });
+document.getElementById('pMapBtn').addEventListener('click', () => location.reload());
+addEventListener('keydown', (e) => { if (e.code === 'Escape' || e.code === 'KeyP') setPause(!paused); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) setPause(true); });
+
+// ---------- navigation ----------
+// the next real turn (gentle bends aren't announced), its distance, the one after it, and a route strip
+// with the turns, forks, checkpoints and the boss on it, like a car's nav app
+const NAV_TURNS = (TURNS || []).filter((t) => Math.abs(t.a) >= 0.6).map((t) => { const L = Math.abs(t.a) * t.r; return { ...t, in: t.s - L / 2, out: t.s + L / 2, fork: FORKS.find((f) => f.turn === t) }; });
+const turnWord = (a) => (Math.abs(a) > 2.6 ? 'U턴' : a > 0 ? '좌회전' : '우회전');
+const turnGlyph = (a) => (Math.abs(a) > 2.6 ? '⮌' : a > 0 ? '↰' : '↱');
+const fmtDist = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.max(0, Math.round(m / 10) * 10)}m`);
+function arrowGeom(a) {
+  const f = (n) => n.toFixed(1);
+  if (Math.abs(a) > 2.6) {
+    const L = a > 0, x = (v) => (L ? v : 100 - v);
+    return { stem: `M${x(66)} 92 V44 A16 16 0 0 ${L ? 0 : 1} ${x(34)} 44 V62`, head: `M${x(34)} 82 L${x(21)} 62 L${x(47)} 62 Z` };
+  }
+  const dx = -Math.sin(a), dy = -Math.cos(a), ex = 50 + dx * 28, ey = 50 + dy * 28, px = -dy, py = dx;
+  return { stem: `M50 92 V50 L${f(ex)} ${f(ey)}`, head: `M${f(ex + dx * 17)} ${f(ey + dy * 17)} L${f(ex + px * 13)} ${f(ey + py * 13)} L${f(ex - px * 13)} ${f(ey - py * 13)} Z` };
+}
+let navA = null;
+function setArrow(a) { if (a === navA) return; navA = a; const g = arrowGeom(a); $('navStem').setAttribute('d', g.stem); $('navHead').setAttribute('d', g.head); }
+function updateNav() {
+  const nav = $('nav');
+  if (!NAV_TURNS.length || state !== 'race') { nav.hidden = true; return; }
+  const fk = forkAt(P.s);
+  if (P.branch && fk) {
+    nav.hidden = false; nav.className = 'panel wrong'; setArrow(fk.side * 0.6);
+    $('navDist').textContent = fmtDist(fk.s1 - P.s); $('navTxt').textContent = '우회로 · 합류까지'; $('navNext').textContent = '경로 재탐색: 조금 돌아가요';
+    return;
+  }
+  const i = NAV_TURNS.findIndex((t) => t.out > P.s), t = NAV_TURNS[i];
+  if (!t || t.in - P.s > 700) { nav.hidden = true; return; }
+  const dist = t.in - P.s, now = dist < 50;
+  nav.hidden = false; nav.className = now ? 'panel now' : 'panel'; setArrow(t.a);
+  $('navDist').textContent = now ? '지금' : fmtDist(dist);
+  $('navTxt').textContent = turnWord(t.a) + (t.fork ? ` · ${t.a > 0 ? '오른쪽' : '왼쪽'} 끝 차로는 우회로` : '');
+  const n = NAV_TURNS[i + 1];
+  $('navNext').textContent = n && n.in - t.out < 900 ? `그다음 ${turnGlyph(n.a)} ${turnWord(n.a)} ${fmtDist(n.in - P.s)}` : '';
+  if (t.fork && !P.navWarned?.has(t.s) && dist < 320) { (P.navWarned ??= new Set()).add(t.s); haptic('fork'); }
+}
+function buildRoute() {
+  const pc = (s) => `${(100 * THREE.MathUtils.clamp(s / FINISH_S, 0, 1)).toFixed(2)}%`;
+  let h = '';
+  for (const t of NAV_TURNS) h += `<i style="bottom:${pc(t.in)}"></i>`;
+  for (const f of FORKS) h += `<i class="fork" style="bottom:${pc(f.s0)};height:${(100 * (f.s1 - f.s0) / FINISH_S).toFixed(2)}%"></i>`;
+  for (const c of CHECKS) h += `<i class="cp" style="bottom:${pc(c)}"></i>`;
+  const ba = ST.bossOpts?.appearAt ?? (ST.boss ? 430 : null);
+  if (ba != null) h += `<i class="boss" style="bottom:${pc(ba)}"></i>`;
+  $('routeMarks').innerHTML = h;
+}
+function updateRoute() {
+  const pr = `${(100 * THREE.MathUtils.clamp(P.s / FINISH_S, 0, 1)).toFixed(2)}%`;
+  $('routeDone').style.height = pr; $('routeCar').style.bottom = pr;
+  const left = Math.max(0, FINISH_S - P.s);
+  $('routeLeft').textContent = fmtDist(left);
+  const avg = raceT > 3 ? P.s / raceT : 30;
+  $('routeEta').textContent = `도착 ~${fmtTime(raceT + penalty + left / Math.max(12, avg)).slice(0, 5)}`;
+}
+// level and coins are P3 on a phone: hidden in the race, they peek in for a moment when they change
+let peekKey = '', peekUntil = 0;
+function updatePeek() {
+  const k = `${save.level}|${save.xp}|${save.doge}`, t = performance.now();
+  if (k !== peekKey) { peekKey = k; peekUntil = t + 1800; }
+  document.querySelector('.tl').classList.toggle('peek', t < peekUntil || state !== 'race');
+}
+
 // ---------- HUD ----------
 const $ = (id) => document.getElementById(id);
-const hud = { lv: $('lv'), xpTxt: $('xpTxt'), xpBar: $('xpBar'), doge: $('doge'), time: $('time'), prog: $('prog'), progDot: $('progDot'), kmh: $('kmh'), pips: $('pips'), jumpTxt: $('jumpTxt'), boost: $('boostFill'), toast: $('toast'), radio: $('radio'), radioTxt: $('radioTxt'), count: $('count'), fuel: $('fuelFill') };
+const hud = { combo: $('combo'), comboName: $('comboName'), comboMult: $('comboMult'), comboBar: $('comboBar'), score: $('score'), mLine: $('mLine'), mission: $('mission'), prompt: $('prompt'), lv: $('lv'), xpTxt: $('xpTxt'), xpBar: $('xpBar'), doge: $('doge'), time: $('time'), prog: $('prog'), progDot: $('progDot'), kmh: $('kmh'), pips: $('pips'), jumpTxt: $('jumpTxt'), boost: $('boostFill'), toast: $('toast'), radio: $('radio'), radioTxt: $('radioTxt'), count: $('count'), fuel: $('fuelFill') };
 let toastT = 0;
 function toast(big, small = '', color = '#38f5ff') {
   hud.toast.innerHTML = `${big}${small ? `<small>${small}</small>` : ''}`;
@@ -811,9 +1099,11 @@ function updateHUD() {
   hud.time.textContent = fmtTime(raceT + penalty);
   const pr = THREE.MathUtils.clamp(P.s / FINISH_S, 0, 1) * 100;
   hud.prog.style.width = pr + '%'; hud.progDot.style.left = pr + '%';
+  updateNav(); updateRoute(); updatePeek();
   hud.kmh.textContent = Math.round(P.v * 3.6 * 1.1);
   hud.boost.style.width = `${P.boostG}%`;
   hud.fuel.style.width = `${100 * P.fuel / AIR_FUEL}%`;
+  $('hpFill').style.width = `${100 * hpF()}%`; $('hpMeter').dataset.z = hpZone();
   $('boostBtn').classList.toggle('ready', P.boostG >= 35);
   if (GUN) {
     $('coilRow').hidden = false; $('fireBtn').hidden = false; $('fireBtn').textContent = '🔥';
@@ -827,8 +1117,147 @@ function updateHUD() {
     $('coilTxt').textContent = ready ? (IS_MOBILE ? '⚡ 코일 발사 준비!' : '⚡ F 키로 코일 발사!') : '⚡ 테슬라 코일 충전 중';
   }
   renderPips();
+  // combo + score + objective
+  hud.combo.hidden = P.combo < 1;
+  if (P.combo >= 1) { hud.comboMult.textContent = `×${comboMult()}`; hud.comboBar.style.width = `${100 * (P.grounded ? P.comboT / COMBO_T : 1)}%`; }
+  hud.score.textContent = P.score.toLocaleString();
+  const mh = mission?.hud?.() || {};
+  hud.mLine.textContent = mh.line || ''; hud.mission.classList.toggle('warn', !!mh.warn);
+  hud.prompt.hidden = !mh.big; if (mh.big) { hud.prompt.textContent = mh.line.replace(/^\d+\/\d+ · /, ''); hud.prompt.classList.toggle('flash', !!mh.flash); }
 }
 const fmtTime = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}`;
+
+// ---------- tricks, combo, score ----------
+// Every trick adds to a chain; the chain's multiplier (x1..x5) scales its points. A crash, a fall or a hard
+// landing breaks it; 3.2 s on the ground without a trick ends it.
+const COMBO_T = 3.2;
+const comboMult = () => (P.combo >= 9 ? 5 : P.combo >= 6 ? 4 : P.combo >= 4 ? 3 : P.combo >= 2 ? 2 : 1);
+function trick(name, pts, quiet) {
+  P.combo++; P.comboT = COMBO_T;
+  const m = comboMult(), got = Math.round(pts * m); P.score += got; P.comboBest = Math.max(P.comboBest, m);
+  hud.comboName.textContent = `${name} +${got.toLocaleString()}`;
+  hud.combo.classList.toggle('hot', m >= 3);
+  if (!quiet || P.combo % 5 === 0) { hud.combo.classList.remove('pop'); void hud.combo.offsetWidth; hud.combo.classList.add('pop'); }
+  mission?.on?.('trick', { name, pts: got });
+}
+function damage(n, why) {
+  if (n <= 0 || state !== 'race') return;
+  const z0 = hpZone(); const was = save.hp; save.hp = Math.max(0, save.hp - n); stats.damage = (stats.damage || 0) + (was - save.hp); writeSaveSoon();
+  floatText(`차체 -${n} · ${why}`); if (n >= 5) haptic('hit');
+  const z1 = hpZone();
+  if (z0 === 'green' && z1 === 'yellow') toast('차체 손상!', '노란 구간 · 스파크가 튀어요', '#ffc83d');
+  if (z0 !== 'red' && z1 === 'red') haptic('warn');
+  if (z0 !== 'red' && z1 === 'red') toast('배터리 화재!', '빨간 구간 · 계속 타면서 닳아요 · 최고속도 감소', '#ff3d6e');
+}
+function endCombo(broken) {
+  if (!P.combo) return;
+  if (broken && P.combo >= 2) floatText(`콤보 끊김 ×${comboMult()}`);
+  else if (P.combo >= 3) { floatText(`콤보 ×${comboMult()} 마무리`); blip(700, 1050, 0.15, 'triangle', 0.08); }
+  P.combo = 0; P.comboT = 0;
+}
+function flash(color, dur = 0.25) {
+  const el = $('flash'); el.style.background = color; el.style.transition = 'none'; el.style.opacity = '1';
+  void el.offsetWidth; el.style.transition = `opacity ${dur}s ease-out`; el.style.opacity = '0';
+}
+
+// ---------- landing marker ----------
+// While airborne: where you will come down (cyan; red = nothing there) and a ring that closes on it as the
+// ground arrives. It turns gold in the perfect-landing window: hold jump then.
+const landMark = (() => {
+  const g = new THREE.Group();
+  const mat = (c) => new THREE.MeshBasicMaterial({ color: new THREE.Color(...c), transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const spot = new THREE.Mesh(new THREE.RingGeometry(1.15, 1.4, 48), mat([0.4, 2.2, 3])); spot.rotation.x = -Math.PI / 2;
+  const dot = new THREE.Mesh(new THREE.CircleGeometry(0.28, 24), mat([0.4, 2.2, 3])); dot.rotation.x = -Math.PI / 2;
+  const timing = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.1, 48), mat([1, 1, 1])); timing.rotation.x = -Math.PI / 2;
+  g.add(spot, dot, timing); g.visible = false; g.renderOrder = 4; scene.add(g);
+  return { g, spot, dot, timing };
+})();
+const _lp = new THREE.Vector3();
+function predictLanding() {
+  let s = P.s, d = P.d, y = P.y, vy = P.vy, t = 0;
+  const v = P.v, dt = 1 / 60, splashY = ST.splashY?.(P.s) ?? -5.5;
+  for (let i = 0; i < 360; i++) {
+    vy -= G * dt; const eS = elevSlope(s); y += (vy - eS * v) * dt; s += v * dt; t += dt;
+    const g = carGround(s, d, y);
+    if (vy - eS * v < 0 && y <= g) return { s, d, y: g, t, fall: false };
+    if (y < splashY) return { s, d, y: Math.max(splashY, -5), t, fall: true };
+  }
+  return null;
+}
+function updateLandMark(time) {
+  const m = landMark;
+  if (state !== 'race' || P.grounded || P.air < 0.08) { m.g.visible = false; $('landCue').hidden = true; return; }
+  const L = predictLanding();
+  if (!L) { m.g.visible = false; $('landCue').hidden = true; return; }
+  m.g.visible = true;
+  world(L.s, L.d, L.y + 0.08, _lp); m.g.position.copy(_lp); m.g.rotation.y = frame(L.s).yaw;
+  const win = !L.fall && L.t < PERFECT_WINDOW + 0.05 && P.air > 0.35;
+  const col = L.fall ? [3, 0.25, 0.3] : win ? [3.2, 2.2, 0.4] : [0.4, 2.2, 3];
+  m.spot.material.color.setRGB(...col); m.dot.material.color.setRGB(...col); m.timing.material.color.setRGB(...(win ? [3.4, 2.6, 0.8] : [1.2, 1.2, 1.3]));
+  m.timing.scale.setScalar(1 + Math.min(L.t, 1.4) * 1.9);
+  m.spot.scale.setScalar(win ? 1.15 + Math.sin(time * 30) * 0.06 : 1);
+  const cue = $('landCue'); cue.hidden = !(win || L.fall);
+  if (L.fall) { cue.textContent = '착지할 곳 없음!'; cue.className = 'fall'; }
+  else if (win) { cue.textContent = P.thrusting ? '좋아요, 유지!' : (IS_MOBILE ? '지금 점프 꾹!' : '지금 Space 꾹!'); cue.className = 'now'; }
+}
+
+// ---------- mission plumbing ----------
+let mission = null;
+const MISSION = ST.mission || { type: 'race', time: ST.stars?.time, perfect: ST.stars?.perfect || 3, bossStar: !!ST.boss };
+const missionObjs = [];
+const missionCtx = {
+  P, get kit() { return kit; }, toast, floatText, blip, trick, touch: IS_MOBILE,
+  radio: (text, who) => { const c = CAST[who] || CAST.hero; radio(text, c.name, c.ava, c.face); },
+  score: () => P.score, boss: () => boss, time: () => performance.now() / 1000, raceT: () => raceT,
+  respawn: (s, v) => respawn(s, v),
+  addRival: (def, i) => addRival(def, i),
+  add: (o) => { scene.add(o); missionObjs.push(o); return o; },
+};
+// rivals: named cars that race you to the line. They hold a racing speed, overtake slower traffic, and blink
+// the turn signal for ~0.9 s before every lane change, so a sharp eye can read where the gap will close.
+function addRival(def, i) {
+  const t = addTraffic(def.type, def.s ?? 20 + i * 14, def.d ?? LANES[(i + 1) % LANES.length], { v: 0, name: def.name, color: def.color });
+  Object.assign(t, { rival: true, base: def.speed, v: 0, launch: def.launch ?? 0.4 + i * 0.15, finishT: null, signals: true });
+  if (t.mesh) addBlinkers(t);
+  if (def.label && t.mesh) { const tag = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 0.9), new THREE.MeshBasicMaterial({ map: textTex(def.label, def.tagColor || '#ff3d6e', { w: 512, h: 104, size: 64 }), transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide })); tag.material.color.setScalar(1.5); tag.position.set(0, t.h + 1.1, 0); t.mesh.add(tag); }
+  return t;
+}
+function addBlinkers(t) {
+  const mat = () => new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 1.6, 0.1), toneMapped: false, transparent: true, opacity: 0 });
+  const L = mat(), R = mat(), geo = new THREE.SphereGeometry(0.13, 10, 8);
+  for (const [m, x] of [[L, -1], [R, 1]]) for (const z of [-1, 1]) { const b = new THREE.Mesh(geo, m); b.position.set(x * (t.hw - 0.05), 0.75, z * (t.hl - 0.15)); t.mesh.add(b); }
+  t.blink = { L, R };
+}
+// a lane change that waits for its signal
+function wantLane(t, lane) {
+  if (Math.abs(lane - t.dT) < 0.5 || t.pend != null) return;
+  if (!t.signals) { t.dT = lane; return; }
+  t.pend = lane; t.sigT = 0.9;
+}
+function stepSignals(t, dt, time) {
+  if (t.pend != null) { t.sigT -= dt; if (t.sigT <= 0) { t.dT = t.pend; t.pend = null; t.sigAfter = 0.5; } }
+  else if (t.sigAfter > 0) t.sigAfter -= dt;
+  if (!t.blink) return;
+  const dir = t.pend != null ? Math.sign(t.pend - t.d) : t.sigAfter > 0 ? Math.sign(t.dT - t.d) : 0;
+  const on = Math.sin(time * 18) > 0 ? 1 : 0;
+  t.blink.L.opacity = dir < 0 ? on : 0; t.blink.R.opacity = dir > 0 ? on : 0;
+}
+function stepRival(t, dt) {
+  if (raceT < t.launch) return;
+  if (t.s > FINISH_S && t.finishT == null) t.finishT = raceT;
+  // racing speed with a soft rubber band so the race stays close both ways
+  const ahead = t.s - P.s, band = ahead > 70 ? 0.9 : ahead < -70 ? 1.08 : 1;
+  let target = t.finishT != null ? 18 : t.base * band;
+  let lead = null;
+  for (const o of traffic) if (o !== t && o.s > t.s && o.s - t.s < 38 && Math.abs(o.d - t.dT) < 2.8 && (!lead || o.s < lead.s)) lead = o;
+  if (lead && lead.v < target - 2 && t.pend == null) {
+    const free = LANES.filter((l) => Math.abs(l - t.dT) < 7 && Math.abs(l - t.dT) > 1 && !traffic.some((o) => o !== t && Math.abs(o.d - l) < 2.6 && o.s > t.s - 12 && o.s < t.s + 30) && !AVOID.some((r) => r.s0 - t.s > 0 && r.s0 - t.s < 50 && l + 1.2 > r.dL && l - 1.2 < r.dR));
+    if (free.length) wantLane(t, free[(Math.random() * free.length) | 0]);
+    else target = Math.min(target, lead.v + Math.max(0, lead.s - t.s - lead.hl - t.hl - 5) * 0.8);
+  }
+  t.v += THREE.MathUtils.clamp(target - t.v, -40 * dt, (t.v < 25 ? 22 : 9) * dt);
+}
+
 
 // ---------- Starship cannon (space stages): hold fire, the twin Raptor guns pick the nearest target ----------
 // stage.gun = { rate, dmg, heat (seconds of fire to overheat) }; targets: the boss's weak point, the boss's
@@ -905,7 +1334,7 @@ function step(dt) {
   const fr0 = frame(P.s);
   // speed
   const boosting = P.boostT > 0;
-  let vmax = 62 + save.level * 0.8 + save.up.motor * 4 + (boosting ? 20 : 0);
+  let vmax = (62 + save.level * 0.8 + save.up.motor * 4) * hpSpeed() + (boosting ? 20 : 0);
   let acc = (boosting ? 34 : 15) * Math.max(0, 1 - P.v / vmax) + (boosting ? 6 : 0);
   if (P.v > vmax) acc = -12;
   // launch: the cold-gas thrusters fire with the motors, 0-100 km/h (as the HUD shows it) in about 1.1 s
@@ -922,10 +1351,39 @@ function step(dt) {
   const grip = P.slipT > 0 ? 0.25 : 1;
   P.d += steer * (P.grounded ? 15 : 14) * grip * dt * Math.min(1, 0.4 + P.v / 40);
   if (P.slipT > 0) { P.slipT -= dt; P.d += P.slipV * dt; P.slipV *= 1 - dt * 1.2; }
+  // corners: the road bends under you, the car wants to carry on straight. Steer in; brake for tight ones.
+  // off the centre line a bend is wider or tighter (radius r + d); stretch > 1 out wide, < 1 on the inside line
+  const kNow = curvature(P.s), stretch = Math.max(0.3, 1 + P.d * kNow);
+  const lat = P.v * P.v * kNow / stretch; // m/s² toward the outside of the bend
+  P.lat = lat;
+  P.d += lat * (P.grounded ? 0.075 : 0.11) * dt;
+  if (P.grounded && Math.abs(lat) > 62) {
+    P.v -= (Math.abs(lat) - 62) * 0.14 * dt; // tyres at the limit scrub speed
+    if (Math.random() < 0.5) puff(world(P.s - 1.5, P.d + Math.sign(lat) * 0.8, 0.2), new THREE.Vector3((Math.random() - 0.5) * 3, 1.5, (Math.random() - 0.5) * 3), '#9a9aa4', 0.9, 0.6);
+    if (!P.skidMsg) { P.skidMsg = 1; floatText('타이어 한계! 코너 전에 ↓ 브레이크'); }
+  } else if (Math.abs(lat) < 20) P.skidMsg = 0;
   const lim = reach(P.s, P.y);
-  P.d = THREE.MathUtils.clamp(P.d, -lim, lim);
+  if (P.grounded && Math.abs(P.d) > lim && Math.sign(P.d) === Math.sign(lat || 1) * -1 * -1 && Math.abs(lat) > 18) {
+    // scraping the outside barrier
+    P.v *= 1 - 0.9 * dt; P.shake = Math.max(P.shake, 0.25);
+    if (Math.random() < 0.6) puff(world(P.s, Math.sign(P.d) * lim, 0.4), new THREE.Vector3(0, 2, 0), '#ffb347', 0.4, 0.3);
+  }
+  const fk = forkAt(P.s);
+  if (fk) {
+    const sd = fk.side, inGap = P.s > fk.s0 && P.s < fk.s1;
+    if (inGap && P.forkId !== fk.id) { P.forkId = fk.id; P.branch = P.d * sd > ROAD_HALF; if (P.branch) { toast('우회로', `합류까지 ${(fk.s1 - P.s) | 0}m 돌아가요`, '#ffc83d'); P.forkLost = 0; } else trick('정확한 진입', 120); }
+    if (!inGap) P.branch = false;
+    if (P.branch) {
+      P.d += sd * (fk.gap(P.s + P.v * dt / stretch) - fk.gap(P.s)); // the lane carries you out and back
+      const lo = fk.inner(P.s) + 1.2, hi = Math.max(lo, fk.outer(P.s) - 1.2);
+      P.d = sd * THREE.MathUtils.clamp(P.d * sd, lo, hi);
+    } else {
+      const far = inGap ? lim : Math.max(lim, fk.outer(P.s) - 1.2);
+      P.d = sd > 0 ? THREE.MathUtils.clamp(P.d, -lim, far) : THREE.MathUtils.clamp(P.d, -far, lim);
+    }
+  } else { P.d = THREE.MathUtils.clamp(P.d, -lim, lim); P.forkId = -1; P.branch = false; }
   P.steerVis += (steer - P.steerVis) * Math.min(1, dt * 8);
-  P.s += P.v * dt;
+  P.s += P.v * dt / stretch;
 
   // jump / thrust
   if (input.jumpEdge) P.jumpBuf = 0.18;
@@ -979,7 +1437,7 @@ function step(dt) {
     const left = P.rollTo - P.roll, sp = (P.grounded ? 20 : 8.5) * dt;
     if (Math.abs(left) <= sp) {
       P.roll = P.rollTo = 0;
-      if (!P.grounded) { gainXP(10, '배럴롤 +10 EXP'); P.boostG = Math.min(100, P.boostG + 10); }
+      if (!P.grounded) { gainXP(10); P.boostG = Math.min(100, P.boostG + 10); trick('배럴롤', 100); }
     } else P.roll += Math.sign(left) * sp;
   }
   if (!P.grounded) {
@@ -987,7 +1445,7 @@ function step(dt) {
     P.vy -= G * dt;
     const rv = P.vy - eS * P.v; // vertical speed relative to the road under you
     if (input.jump && rv < 3 && P.fuel > 0) {
-      P.thrusting = true; P.fuel -= dt; P.vy += 27 * dt; if (rv < -7) P.vy += 20 * dt;
+      P.thrusting = true; P.lastThrust = raceT; P.fuel -= dt; P.vy += 27 * dt; if (rv < -7) P.vy += 20 * dt;
       if (Math.random() < 0.8) { const base = world(P.s, P.d + (Math.random() - 0.5) * 1.6, P.y); puff(base, new THREE.Vector3(0, -14, 0), '#cfefff', 0.6, 0.35); }
     }
     P.y += (P.vy - eS * P.v) * dt;
@@ -1019,7 +1477,7 @@ function step(dt) {
   for (const hz of HAZARDS) {
     hz.cd = (hz.cd || 0) - dt;
     if (!hz.active || hz.cd > 0 || Math.abs(P.s - hz.s) > hz.l || P.d < hz.dL || P.d > hz.dR || P.y > (hz.h ?? 3) || P.y + 1.3 < (hz.y0 ?? -9)) continue;
-    hz.cd = 1; P.v *= 0.5; P.crashT = 0.6; P.shake = 0.8;
+    hz.cd = 1; P.v *= 0.5; P.crashT = 0.6; P.shake = 0.8; damage(8, '위험 구역');
     const [big, small, col] = hz.text || ['앗 뜨거!', '', '#ff6a1a']; toast(big, small, col); blip(120, 40, 0.4, 'sawtooth', 0.2);
     for (let i = 0; i < 16; i++) puff(world(P.s, P.d, 0.8), new THREE.Vector3((Math.random() - 0.5) * 10, 3 + Math.random() * 5, (Math.random() - 0.5) * 10), i % 2 ? '#ff8a2a' : '#555', 1.3, 0.7);
   }
@@ -1027,7 +1485,9 @@ function step(dt) {
   // traffic
   for (const t of traffic) {
     if (!t.parked) {
-      if (t.brakeT > 0) { t.brakeT -= dt; t.v = Math.max(0, t.v - 60 * dt); if (t.brakeT <= 0) t.cool = 3; }
+      if (t.signals) stepSignals(t, dt, raceT);
+      if (t.rival) stepRival(t, dt);
+      else if (t.brakeT > 0) { t.brakeT -= dt; t.v = Math.max(0, t.v - 60 * dt); if (t.brakeT <= 0) t.cool = 3; }
       else {
         // keep a gap to whoever is ahead in the lane (jams back up naturally)
         let target = t.base, lead = null;
@@ -1039,7 +1499,7 @@ function step(dt) {
       t.s += t.v * dt;
       // lidar (and the robotaxi's cameras) see the ramp ahead and change lane
       const ahead = AVOID.find((r) => r.s0 - t.s > 0 && r.s0 - t.s < 45 && t.dT + 1.2 > r.dL && t.dT - 1.2 < r.dR);
-      if (ahead) { const free = LANES.filter((l) => !AVOID.some((r) => Math.abs(r.s0 - ahead.s0) < 2 && l + 1.2 > r.dL && l - 1.2 < r.dR)); if (free.length) t.dT = free.reduce((a, b) => (Math.abs(b - t.d) < Math.abs(a - t.d) ? b : a)); }
+      if (ahead) { const free = LANES.filter((l) => !AVOID.some((r) => Math.abs(r.s0 - ahead.s0) < 2 && l + 1.2 > r.dL && l - 1.2 < r.dR)); if (free.length) wantLane(t, free.reduce((a, b) => (Math.abs(b - t.d) < Math.abs(a - t.d) ? b : a))); }
       else if (t.copy) {
         // copycats mirror your lane, a beat late
         t.copyT -= dt;
@@ -1048,14 +1508,24 @@ function step(dt) {
       t.d += THREE.MathUtils.clamp(t.dT - t.d, -6 * dt, 6 * dt);
       t.y = carGround(t.s, t.d);
       if (t.temp && t.s < P.s - 80) { t.dead = true; scene.remove(t.mesh); continue; }
+      if (t.rival) { if (t.s > FINISH_S + 400) t.v = 0; }
+      else {
       const maxS = TRAFFIC[t.type].range?.[1] ?? TRAFFIC_MAX_S;
       if (t.s < P.s - 80 || t.s > maxS) {
         t.s = Math.min(maxS - 20, P.s + 320 + Math.random() * 380); t.d = t.dT = randLane(t.type); t.over = false; t.brakeT = 0; t.v = t.base;
         for (const [a, b] of JAMS) if (t.s > a - 40 && t.s < b + 5) t.s = b + 20 + Math.random() * 40;
         if (t.s < P.s + 120) t.s = P.s - 100; // nothing left ahead: park it behind
+        t.nm = false; t.pend = null;
+      }
       }
     }
     const ds = t.s - P.s, dd = Math.abs(t.d - P.d);
+    // near miss: you shot past it with under a metre to spare
+    if (!t.nm && t.pds > 0 && ds <= 0 && P.v > t.v + 4 && P.y - t.y < t.h) {
+      const clear = dd - t.hw - 0.95;
+      if (clear > -0.05 && clear < 1.0) { t.nm = true; stats.nearMiss++; P.boostG = Math.min(100, P.boostG + 8); trick('아슬아슬 추월', 60); blip(1200, 600, 0.08, 'sine', 0.06); }
+    }
+    t.pds = ds;
     if (t.brakes && t.brakeT <= 0 && t.cool <= 0 && ds > -6 && ds < 26 && dd < 6.5 && P.y < 2) {
       t.brakeT = 2.6;
       if (!radioFlags.has('lidar')) { radioFlags.add('lidar'); floatText('웨이모: 장애물 감지! 급정거!'); }
@@ -1066,9 +1536,9 @@ function step(dt) {
       else if (!t.over) {
         t.over = true;
         if (P.grounded) { // driving across roofs
-          stats.roofs++; P.roofRun++; gainXP(3); P.boostG = Math.min(100, P.boostG + 4);
+          stats.roofs++; P.roofRun++; gainXP(3); P.boostG = Math.min(100, P.boostG + 4); trick('지붕 질주', 40, true);
           if (P.roofRun % 5 === 0) floatText(`지붕 질주 ×${P.roofRun}`);
-        } else { stats.jumpsOver++; gainXP(15, '차 뛰어넘기 +15 EXP'); P.boostG = Math.min(100, P.boostG + 15); blip(600, 900, 0.12); }
+        } else { stats.jumpsOver++; gainXP(15); P.boostG = Math.min(100, P.boostG + 15); blip(600, 900, 0.12); trick('차 뛰어넘기', 120); }
       }
     }
   }
@@ -1092,25 +1562,41 @@ function step(dt) {
   // radio
   for (const [s, text, who] of RADIO_SCRIPT) if (P.s > s && !radioFlags.has(s)) { radioFlags.add(s); const c = CAST[who] || CAST.hero; radio(text, c.name, c.ava, c.face); }
 
+  passCheckpoints();
+  stepBody(dt);
+  mission?.step?.(dt);
+  if (P.combo > 0 && P.grounded) { P.comboT -= dt; if (P.comboT <= 0) endCombo(false); }
   if (P.s >= FINISH_S && !P.finished) finish();
   if (P.shake > 0) P.shake -= dt * 1.8;
   return fr0;
 }
+// Landing grades. PERFECT = soft touchdown with the thrusters firing as you touch (the ring turns gold in the
+// last ~0.3 s: hold jump then); GOOD = soft but not timed; HARD = fast and unbraked.
+const PERFECT_WINDOW = 0.32;
 function land(g) {
   const impact = -(P.vy - elevSlope(P.s) * P.v);
   if (g < 0.5) P.roofRun = 0;
   P.y = g; P.grounded = true; P.lastG = g; P.slope = slopeAt(P.s, P.d, g); P.kG = elevSlope(P.s) + P.slope; P.vy = P.kG * P.v;
   const base = world(P.s, P.d, P.y);
+  let grade = 'small';
   if (P.air > 0.45 && impact < 11.5) {
-    stats.perfect++; P.boostT = Math.max(P.boostT, 0.9); P.boostG = Math.min(100, P.boostG + 20);
-    toast('PERFECT LANDING!', '+5 EXP · 속도 부스트', '#38f5ff'); gainXP(5);
-    blip(520, 1040, 0.2, 'triangle', 0.14);
-    for (let i = 0; i < 16; i++) puff(base, new THREE.Vector3((Math.random() - 0.5) * 16, Math.random() * 2, (Math.random() - 0.5) * 16), '#aeeaff', 1, 0.5);
+    if (raceT - P.lastThrust < PERFECT_WINDOW) {
+      grade = 'perfect'; stats.perfect++; haptic('perfect'); P.boostT = Math.max(P.boostT, 1.0); P.boostG = Math.min(100, P.boostG + 25);
+      toast('PERFECT LANDING!', '속도 부스트 · 부스트 게이지 +25', '#38f5ff'); gainXP(5); trick('퍼펙트 착지', 150);
+      blip(523, 1046, 0.18, 'triangle', 0.13); setTimeout(() => blip(659, 1318, 0.18, 'triangle', 0.12), 70); setTimeout(() => blip(784, 1568, 0.3, 'triangle', 0.12), 140);
+      flash('rgba(120, 240, 255, .35)');
+      for (let i = 0; i < 22; i++) puff(base, new THREE.Vector3((Math.random() - 0.5) * 18, Math.random() * 2, (Math.random() - 0.5) * 18), '#aeeaff', 1, 0.5);
+    } else {
+      grade = 'good'; stats.good++; haptic('land'); P.boostG = Math.min(100, P.boostG + 10); trick('착지', 50); if (impact > 7) damage(2, '서스펜션');
+      floatText('굿 랜딩 · 금색 링일 때 점프를 꾹 누르면 퍼펙트'); blip(440, 660, 0.12, 'triangle', 0.1);
+    }
   } else if (impact > 19) {
-    P.v *= 0.72; P.shake = 0.6; toast('쿵! 하드 랜딩', '공중에서 점프를 꾹 누르면 부드럽게 내려와요', '#ffc83d');
+    grade = 'hard'; endCombo(true); damage(9, '하드 랜딩'); haptic('hard');
+    P.v *= 0.72; P.shake = 0.6; toast('쿵! 하드 랜딩', '링이 금색일 때 점프를 꾹 = 사뿐 착지', '#ffc83d');
     blip(120, 50, 0.3, 'square', 0.15);
     for (let i = 0; i < 12; i++) puff(base, new THREE.Vector3((Math.random() - 0.5) * 10, Math.random() * 3, (Math.random() - 0.5) * 10), '#a08a7a', 1.3, 0.8);
   }
+  mission?.on?.('land', grade);
 }
 // Korean 와/과 by whether the last syllable has a final consonant
 function withWa(w) {
@@ -1120,27 +1606,43 @@ function withWa(w) {
 }
 function crash(t) {
   P.v = Math.min(P.v * 0.45, t.v + (t.parked ? 9 : 2)); P.s = t.s - t.hl - 2.3; // parked: enough left to hop onto it
-  P.crashT = 0.8; P.shake = 0.8;
+  P.crashT = 0.8; P.shake = 0.8; stats.crashes++; haptic('crash'); damage(t.parked ? 6 : 10, t.name + ' 추돌'); endCombo(true); mission?.on?.('crash', t);
   toast('쾅!', t.name + withWa(t.name) + ' 충돌', '#ff3d6e');
   blip(180, 40, 0.35, 'sawtooth', 0.2);
   const base = world(P.s + 2, P.d, 1);
   for (let i = 0; i < 18; i++) puff(base, new THREE.Vector3((Math.random() - 0.5) * 10, Math.random() * 5, (Math.random() - 0.5) * 10), i % 2 ? '#ffb347' : '#555', 0.9, 0.6);
 }
+// ---------- checkpoints ----------
+// a fall puts you back at the last one you passed (or the stage's own spot before a gap), rolling, in under a second
+const CHECKS = (ST.checkpoints || (() => { const out = []; for (let s = 450; s < FINISH_S - 150; s += 450) if (!GAPS.some((g) => s > g.s0 - 90 && s < g.s1 + 30)) out.push(s); return out; })()).slice().sort((a, b) => a - b);
+function passCheckpoints() {
+  while (P.cpI < CHECKS.length && P.s >= CHECKS[P.cpI]) { P.cp = CHECKS[P.cpI++]; if (state === 'race' && raceT > 1) { floatText('체크포인트'); haptic('check'); blip(880, 1320, 0.1, 'sine', 0.08); } }
+}
+function respawn(s, v = 46, why) {
+  flash('rgba(8, 4, 20, .9)', 0.45);
+  Object.assign(P, { s, d: THREE.MathUtils.clamp(P.d, -ROAD_HALF + 1.2, ROAD_HALF - 1.2), y: 0, vy: 0, v, grounded: true, lastG: 0, kG: undefined, air: 0, roll: 0, rollTo: 0, charges: Math.max(P.charges, 1), fuel: AIR_FUEL, shake: 0.2, crashT: 0 });
+  P.cpI = CHECKS.findIndex((c) => c > s); if (P.cpI < 0) P.cpI = CHECKS.length;
+  // clear the road just ahead so you don't land in someone's boot
+  for (const t of traffic) if (!t.parked && !t.rival && t.s > s - 10 && t.s < s + 45) t.s = s + 120 + Math.random() * 80;
+  snapCam = true;
+}
 function splash() {
   const base = world(P.s, P.d, (ST.splashY?.(P.s) ?? -5.5) - 0.5);
   for (let i = 0; i < 30; i++) puff(base, new THREE.Vector3((Math.random() - 0.5) * 10, 6 + Math.random() * 10, (Math.random() - 0.5) * 10), '#bfe9ff', 1.4, 1);
-  const [big, small, line] = ST.lines.fall || ['추락!', '+3초', '다시 가자!'];
-  toast(big, small, '#38f5ff');
+  const [big, small, line] = ST.lines.fall || ['추락!', '+2초', '다시 가자!'];
+  toast(big, small.replace('+3초', '+2초'), '#38f5ff');
   radio(line);
   blip(300, 60, 0.5, 'sine', 0.2);
-  const gap = GAPS.find((g) => P.s > g.s0 - 60 && P.s < g.s1 + 60) || GAPS[0];
-  Object.assign(P, { s: gap ? gap.respawn : P.s - (ST.respawnBack ?? 100), d: THREE.MathUtils.clamp(P.d, -ROAD_HALF + 1.2, ROAD_HALF - 1.2), y: 0, vy: 0, v: 52, grounded: true, lastG: 0, kG: undefined, charges: Math.max(P.charges, 1), shake: 0.4 });
-  penalty += 3;
+  stats.falls++; endCombo(true); damage(8, '추락'); mission?.on?.('fall');
+  const gap = GAPS.find((g) => P.s > g.s0 - 60 && P.s < g.s1 + 60);
+  respawn(gap ? Math.max(gap.respawn, Math.min(P.cp, gap.s0 - 120)) : Math.max(P.cp, P.s - (ST.respawnBack ?? 100)), 52);
+  penalty += 2;
 }
 function collect(p) {
   p.taken = true; scene.remove(p.mesh);
   switch (p.type) {
     case 'coin': if (boss?.B.active) P.coil = Math.min(100, P.coil + 6); save.doge += 5; writeSaveSoon(); stats.dogeGain += 5; stats.coins++; P.boostG = Math.min(100, P.boostG + 3); blip(988, 1480, 0.09, 'square', 0.06); break;
+    case 'wrench': if (save.parts < PART_MAX) save.parts++; writeSaveSoon(); stats.parts = (stats.parts || 0) + 1; floatText(`수리 부품 +1 (${save.parts}개)`); blip(500, 1000, 0.2, 'triangle', 0.12); break;
     case 'air': P.charges = Math.min(maxCharges(), P.charges + 1); P.fuel = AIR_FUEL; floatText('압축공기 +1'); blip(300, 900, 0.18, 'sine', 0.12); break;
     default: if (boss?.B.active) P.coil = Math.min(100, P.coil + (p.type === 'gpu' ? 22 : 40)); gainXP(PICK[p.type].xp, PICK[p.type].label); blip(660, 1320, 0.16, 'triangle', 0.14);
       if (p.type === 'legend') { toast('전설의 블랙웰 칩!', '+200 EXP', '#b07dff'); radio('그거 젠슨이 찾고 있던 건데… 우리가 가져가자.'); }
@@ -1149,25 +1651,43 @@ function collect(p) {
 function finish() {
   P.finished = true; state = 'finish';
   const t = raceT + penalty;
-  const bossWin = !!boss?.B.defeated;
-  const stars = boss ? 1 + (bossWin ? 1 : 0) + (t <= ST.stars.time || stats.perfect >= (ST.stars.perfect || 3) ? 1 : 0)
-    : 1 + (t <= ST.stars.time ? 1 : 0) + (stats.perfect >= (ST.stars.perfect || 3) ? 1 : 0); // no boss: time and landings are a star each
-  const prev = save.bests[ST.id];
-  const best = prev && prev < t ? prev : t; save.bests[ST.id] = best;
+  endCombo(false);
+  const run = { t, perfect: stats.perfect, score: P.score, crashes: stats.crashes, falls: stats.falls };
+  const res = mission.result(run);
+  const nStars = res.stars.filter((x) => x.ok).length;
+  const rec = save.camp[ST.evKey] ??= { done: false, stars: 0, best: 0, score: 0, play: 0, tries: 0 };
+  const firstClear = res.pass && !rec.done;
+  const partsWon = res.pass ? (firstClear ? 2 : 1) : 0; save.parts = Math.min(PART_MAX, save.parts + partsWon);
+  if (res.pass) { rec.done = true; rec.stars = Math.max(rec.stars, nStars); if (!rec.best || t < rec.best) rec.best = t; rec.score = Math.max(rec.score || 0, P.score); }
+  if (!EVENTS.length || EVENTS.length === 1) { const prev = save.bests[ST.id]; if (res.pass && (!prev || t < prev)) save.bests[ST.id] = t; }
   writeSave();
-  radio(ST.lines.finish);
+  radio(res.pass ? ST.lines.finish : (ST.lines.failed || '괜찮아, 한 번 더 가자.'));
+  const goal = res.stars.find((x) => !x.ok && x.gap);
   setTimeout(() => {
+    $('rEyebrow').textContent = res.pass ? (ST.text.clear || 'CLEAR') : 'TRY AGAIN';
+    $('rTitle').textContent = res.pass ? (ST.text.clearTitle || EV.name) : `${EV.name} 실패`;
     $('rTime').textContent = fmtTime(t);
-    $('rBest').textContent = fmtTime(best);
-    $('rStars').innerHTML = [0, 1, 2].map((i) => `<span class="${i < stars ? 'on' : ''}">★</span>`).join('');
+    $('rBest').textContent = rec.best ? fmtTime(rec.best) : '—';
+    $('rStars').innerHTML = res.stars.map((x) => `<span class="${x.ok ? 'on' : ''}" title="${x.text}">★</span>`).join('');
+    $('rStarList').innerHTML = res.stars.map((x) => `<li class="${x.ok ? 'on' : ''}">${x.ok ? '★' : '☆'} ${x.text}</li>`).join('');
     $('rPerfect').textContent = stats.perfect;
+    $('rScore').textContent = P.score.toLocaleString() + (P.comboBest > 1 ? ` · 최대 ×${P.comboBest}` : '');
     $('rCoins').textContent = `+${stats.dogeGain}`;
-    $('rXp').textContent = `+${stats.xpGain}`;
-    $('rLv').textContent = `LV ${save.level}`;
-    $('rBoss').textContent = bossWin ? '격추' : '놓침';
+    $('rHp').textContent = `${Math.round(save.hp)}/${hpMax()}${stats.damage ? ` (-${Math.round(stats.damage)})` : ''} · 부품 ${save.parts}개${partsWon || stats.parts ? ` (+${partsWon + (stats.parts || 0)})` : ''}`;
+    $('rXp').textContent = `+${stats.xpGain} · LV ${save.level}`;
+    $('rBoss').textContent = boss?.B.defeated ? '격추' : '놓침';
     $('rBoss').hidden = $('rBoss').previousElementSibling.hidden = !boss;
     $('rRoofs').textContent = stats.roofs;
     $('rRoofRow').hidden = !JAMS.length; $('rRoofRow2').hidden = !JAMS.length;
+    // one concrete thing to do next: why it failed, else the nearest star, else the next event
+    const nxt = nextEvent();
+    $('rGoal').innerHTML = !res.pass ? `<b>다음 목표</b> ${res.fail}` : goal ? `<b>다음 목표</b> ${goal.gap}` : nxt ? `<b>다음</b> ${nxt.label}` : '<b>전부 달성!</b> 엔딩까지 왔어요.';
+    $('rGoal').classList.toggle('fail', !res.pass);
+    $('nextBtn').hidden = !res.pass || !nxt;
+    if (nxt) { $('nextBtn').textContent = `다음: ${nxt.short} →`; $('nextBtn').onclick = () => goStage(nxt.stage, nxt.i); }
+    $('againBtn').textContent = res.pass ? '다시 달리기' : '다시 도전';
+    $('againBtn').classList.toggle('go', !res.pass); $('againBtn').classList.toggle('ghost', res.pass);
+    $('rNext').textContent = firstClear && nxt ? `새로 열림: ${nxt.label}` : '';
     $('results').hidden = false;
   }, ST.finishDelay ?? 900);
 }
@@ -1286,13 +1806,18 @@ addEventListener('resize', resize);
 function startRace() {
   initAudio(); if (AC && AC.state === 'suspended') AC.resume();
   $('poster').hidden = true; $('results').hidden = true; $('garage').hidden = true; $('hud').hidden = false;
-  resetRace(); placeCar();
+  resetRace(); placeCar(); buildRoute(); setPause(false);
+  (save.camp[ST.evKey] ??= { done: false, stars: 0, best: 0, score: 0, play: 0, tries: 0 }).tries++; writeSaveSoon();
   const fr = frame(0); camPos.copy(car.position).addScaledVector(fr.f, -9); camPos.y = 3.4; camLook.copy(car.position);
   state = 'count'; countdown = 3.2;
 }
 // ---------- X Garage ----------
 function renderGarage() {
+  grantParts();
   $('gDoge').textContent = save.doge.toLocaleString();
+  const left = save.parts >= PART_MAX ? '가득' : `${Math.ceil((PART_EVERY - (Date.now() - save.partsT)) / 60000)}분 뒤 +1`;
+  $('gRepair').innerHTML = `<div><h3>차체 내구도 ${Math.round(save.hp)} / ${hpMax()}</h3><div class="hpbar" data-z="${hpZone()}"><i style="width:${100 * hpF()}%"></i><b style="left:${RED * 100}%"></b><b style="left:${GREEN * 100}%"></b></div><p>수리 부품 ${save.parts}/${PART_MAX}개 · ${left} · 부품 1개 = 최대의 ${PART_FRAC * 100}%</p></div>
+    <div class="rbtns"><button class="buy" data-repair="part" ${save.hp >= hpMax() || save.parts < 1 ? 'disabled' : ''}>부품으로 수리</button><button class="buy alt" data-repair="doge" ${save.hp >= hpMax() || save.doge < 120 ? 'disabled' : ''}>Ð 120 수리</button></div>`;
   $('gList').innerHTML = Object.entries(UPGRADES).map(([k, u]) => {
     const l = save.up[k], maxed = l >= u.max, cost = u.cost(l);
     return `<div class="gitem"><div><h3>${u.name}</h3><div class="lvl">${'<i class="on"></i>'.repeat(l)}${'<i></i>'.repeat(u.max - l)}</div></div>
@@ -1300,6 +1825,10 @@ function renderGarage() {
       <p>지금: ${u.desc(l)}${maxed ? '' : ` → <b>${u.desc(l + 1)}</b>`}</p></div>`;
   }).join('');
 }
+$('gRepair').addEventListener('click', (e) => {
+  const k = e.target.closest('[data-repair]')?.dataset.repair; if (!k) return;
+  if (repair(k === 'doge')) { initAudio(); blip(400, 1200, 0.3, 'triangle', 0.15); renderGarage(); refreshSaveLine(); }
+});
 $('gList').addEventListener('click', (e) => {
   const k = e.target.closest('[data-up]')?.dataset.up; if (!k) return;
   const u = UPGRADES[k], l = save.up[k], cost = u.cost(l);
@@ -1311,32 +1840,73 @@ function openGarage() { renderGarage(); $('garage').hidden = false; $('gClose').
 $('garageBtn').addEventListener('click', openGarage);
 $('garageBtn2').addEventListener('click', openGarage);
 $('gClose').addEventListener('click', () => { $('garage').hidden = true; });
-function refreshSaveLine() { const b = save.bests[ST.id]; $('saveLine').textContent = `LV ${save.level} · Ð ${save.doge.toLocaleString()}${b ? ` · 최고 기록 ${fmtTime(b)}` : ''}`; }
+function refreshSaveLine() { grantParts(); const b = save.camp[ST.evKey]?.best || save.bests[ST.id]; $('saveLine').textContent = `LV ${save.level} · Ð ${save.doge.toLocaleString()} · 차체 ${Math.round(100 * hpF())}% · 부품 ${save.parts}${b ? ` · 최고 기록 ${fmtTime(b)}` : ''}`; }
 // stage texts, stage picker, next-stage button
+// ---------- campaign ----------
+// every event of every region in play order; an event opens when the one before it is cleared
+const CAMPAIGN = ORDER.flatMap((st, si) => (st.events || [{ id: 'run', name: st.name }]).map((e, i) => ({ st, si, e, i, key: `${st.id}:${e.id}` })));
+const UNLOCK_ALL = new URLSearchParams(location.search).has('unlock');
+const isDone = (k) => !!save.camp[CAMPAIGN[k].key]?.done || (CAMPAIGN[k].e.id === 'run' && !!save.bests[CAMPAIGN[k].st.id]);
+const isOpen = (k) => UNLOCK_ALL || k === 0 || isDone(k) || isDone(k - 1);
+const curK = CAMPAIGN.findIndex((c) => c.key === ST.evKey);
+const label = (c) => (c.st.events ? `${c.st.name} · ${c.e.name}` : c.st.name);
+function nextEvent() {
+  const c = CAMPAIGN[curK + 1]; if (!c) return null;
+  return { stage: c.st.id, i: c.i, label: label(c), short: c.st.events ? c.e.name : c.st.name };
+}
+const fmtPlay = (t) => (t >= 3600 ? `${Math.floor(t / 3600)}시간 ${Math.floor(t % 3600 / 60)}분` : `${Math.floor(t / 60)}분 ${Math.floor(t % 60)}초`);
+const TYPE_NAME = { tutorial: '연습', deliver: '배송', stunt: '스턴트', rivals: '레이스', boss: '보스전', race: '주행' };
+function renderCampaign() {
+  // region chips: progress per region
+  $('stagePick').innerHTML = ORDER.map((st, si) => {
+    const ks = CAMPAIGN.map((c, k) => k).filter((k) => CAMPAIGN[k].si === si);
+    const open = ks.some(isOpen), done = ks.filter(isDone).length;
+    return `<button type="button" class="chip${st === BASE ? ' on' : ''}${open ? '' : ' locked'}" data-stage="${st.id}" ${open ? '' : 'disabled'}>${String(st.num).padStart(2, '0')} ${st.name}${ks.length > 1 ? ` <small>${done}/${ks.length}</small>` : ''}</button>`;
+  }).join('');
+  $('stagePick').onclick = (e) => { const id = e.target.closest('[data-stage]:not([disabled])')?.dataset.stage; if (!id || id === BASE.id) return; const st = STAGES[id]; const ks = CAMPAIGN.map((c, k) => k).filter((k) => CAMPAIGN[k].st === st); const k = ks.find((x) => isOpen(x) && !isDone(x)) ?? ks[0]; goStage(id, CAMPAIGN[k].i); };
+  // this region's events
+  const evs = CAMPAIGN.map((c, k) => ({ c, k })).filter(({ c }) => c.st === BASE);
+  $('evList').hidden = evs.length < 2;
+  $('evList').innerHTML = evs.map(({ c, k }) => {
+    const r = save.camp[c.key], open = isOpen(k), stars = r?.done ? r.stars : 0;
+    return `<button type="button" class="ev${c.key === ST.evKey ? ' on' : ''}${open ? '' : ' locked'}" data-i="${c.i}" ${open ? '' : 'disabled'}>
+      <span class="n">${c.i + 1}</span><span class="t"><b>${c.e.name}</b><small>${TYPE_NAME[c.e.mission?.type || 'race']}${r?.play ? ` · ${fmtPlay(r.play)}` : ''}</small></span>
+      <span class="s">${open ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '🔒'}</span></button>`;
+  }).join('');
+  $('evList').onclick = (e) => { const b = e.target.closest('[data-i]:not([disabled])'); if (b && +b.dataset.i !== EV_I) goStage(BASE.id, +b.dataset.i); };
+  // continue: the first open event not cleared yet
+  const ck = CAMPAIGN.findIndex((c, k) => isOpen(k) && !isDone(k));
+  const cont = CAMPAIGN[ck];
+  $('contBtn').hidden = !cont || cont.key === ST.evKey;
+  if (cont) { $('contBtn').textContent = `이어하기: ${label(cont)}`; $('contBtn').onclick = () => goStage(cont.st.id, cont.i); }
+  const doneN = CAMPAIGN.filter((c, k) => isDone(k)).length;
+  $('campLine').textContent = `캠페인 ${doneN}/${CAMPAIGN.length} · 플레이 ${fmtPlay(save.play || 0)}`;
+}
+// stage texts, event brief
 function stageUI() {
   const T = ST.text;
-  $('pEyebrow').textContent = T.eyebrow; $('pTitle').textContent = T.title; $('pSub').textContent = T.sub;
+  const multi = EVENTS.length > 1;
+  $('pEyebrow').textContent = multi ? `CHAPTER ${String(BASE.num).padStart(2, '0')} · ${EV_I + 1}/${EVENTS.length} ${TYPE_NAME[EV.mission?.type || 'race']}` : T.eyebrow;
+  $('pTitle').textContent = T.title; $('pSub').textContent = multi ? EV.name : T.sub;
   // long names (SAN FRANCISCO) shrink until the longest word fits the column
   const fitTitle = () => { const el = $('pTitle'); el.style.fontSize = ''; el.style.whiteSpace = 'nowrap'; const w = el.clientWidth; el.style.whiteSpace = '';
     const words = T.title.split(' '); const probe = document.createElement('span'); probe.style.whiteSpace = 'nowrap'; el.textContent = ''; el.append(probe);
     let worst = 0; for (const wd of words) { probe.textContent = wd; worst = Math.max(worst, probe.offsetWidth); } el.textContent = T.title;
     if (worst > w && w > 0) el.style.fontSize = `${parseFloat(getComputedStyle(el).fontSize) * w / worst * 0.97}px`; };
   fitTitle(); document.fonts?.ready.then(fitTitle); addEventListener('resize', fitTitle);
-  $('pTip').innerHTML = T.tip; $('pTweet').textContent = T.tweet; $('pMeta').textContent = T.meta; $('loadTxt').textContent = T.load;
-  $('hudStage').textContent = T.hud; $('rEyebrow').textContent = T.clear; $('rTitle').textContent = T.clearTitle;
-  const i = ORDER.indexOf(ST), next = ORDER[i + 1];
-  $('rNext').innerHTML = `별 조건: ${ST.stars.text}<br>도지코인은 X 개러지에서 자석, 탱크, 컴프레서, 모터 강화에 써요.${next ? '' : ' 오스틴에서 화성까지, 전 스테이지 정복! 랭킹과 고스트 레이스는 다음 업데이트에서 열려요.'}`;
-  $('nextBtn').hidden = !next;
-  if (next) { $('nextBtn').textContent = `다음: ${next.name} →`; $('nextBtn').onclick = () => goStage(next.id); }
-  $('stagePick').innerHTML = ORDER.map((st) => `<button type="button" class="chip${st === ST ? ' on' : ''}" data-stage="${st.id}">${String(st.num).padStart(2, '0')} ${st.name}</button>`).join('');
-  $('stagePick').onclick = (e) => { const id = e.target.closest('[data-stage]')?.dataset.stage; if (id && id !== ST.id) goStage(id); };
+  $('pTip').innerHTML = EV.brief || T.tip; $('pTweet').textContent = T.tweet; $('pMeta').textContent = T.meta; $('loadTxt').textContent = T.load;
+  $('hudStage').textContent = multi ? `${BASE.name} · ${EV.name}` : T.hud;
+  $('mTitle').textContent = EV.mission ? EV.name : '';
+  renderCampaign();
   document.title = `Roadster Racer · ${ST.name}`;
 }
 
 $('startBtn').addEventListener('click', startRace);
 $('againBtn').addEventListener('click', startRace);
+$('mapBtn').addEventListener('click', () => location.reload());
 
-let last = performance.now(), tickAcc = 0;
+let last = performance.now(), tickAcc = 0, playSaveT = 0;
+setInterval(() => { if (grantParts() && state !== 'race') refreshSaveLine(); }, 15000);
 const TICK = 1 / 120; // fixed physics tick, deterministic for future replays and ghosts
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
@@ -1349,12 +1919,17 @@ function loop(now) {
     else if (Math.ceil(countdown + dt) !== n) blip(440, 440, 0.15, 'square', 0.08);
   }
   if (state === 'race' && !hud.count.hidden && raceT > 0.8) hud.count.hidden = true;
-  if (state === 'race') { tickAcc += dt; while (tickAcc >= TICK) { step(TICK); tickAcc -= TICK; } }
+  if (state === 'race' && !paused) { tickAcc += dt; while (tickAcc >= TICK) { step(TICK); tickAcc -= TICK; } }
   else if (state === 'finish') { P.v = Math.max(0, P.v - 30 * dt); P.s += P.v * dt; P.thrusting = false; }
   if (state !== 'loading') { placeCar(); syncTraffic(time); syncPickups(time); boss?.sync(time); }
   if (state === 'poster') posterStage(time);
   ST.tick?.(time, camera, { state, P, car });
-  updateColdGas(dt, time); updatePuffs(dt); updateRadio(dt);
+  updateColdGas(dt, time); updateLandMark(time); updatePuffs(dt); updateRadio(dt);
+  // real play time per event (what a person actually spent here), saved every few seconds
+  if (!paused && (state === 'race' || state === 'count' || (state === 'finish' && $('results').hidden))) {
+    const rec = save.camp[ST.evKey] ??= { done: false, stars: 0, best: 0, score: 0, play: 0, tries: 0 };
+    rec.play += dt; save.play += dt; if ((playSaveT += dt) > 5) { playSaveT = 0; writeSave(); }
+  }
   if (toastT > 0) toastT -= dt;
   if (!window.__game?.frozen) updateCamera(dt, time);
   sky.position.copy(camera.position);
@@ -1379,9 +1954,9 @@ async function boot() {
   await carReady; await trafficReady;
   car.add(coldGas);
   try {
-    boss = createBoss({ faces: FACES, scene, P, LANES, ROAD_HALF, world, frame, carGround, puff, toast, radio, floatText, blip, gainXP, $, camera, car, addTraffic, crash, traffic: () => traffic,
+    boss = createBoss({ damage, faces: FACES, scene, P, LANES, ROAD_HALF, world, frame, carGround, puff, toast, radio, floatText, blip, gainXP, $, camera, car, addTraffic, crash, traffic: () => traffic,
       addPuddle: (q) => PUDDLES.push(q), removePuddle: (q) => { const i = PUDDLES.indexOf(q); if (i >= 0) PUDDLES.splice(i, 1); },
-      addDoge: (n) => { n = Math.max(n, -save.doge); save.doge += n; stats.dogeGain += n; writeSaveSoon(); } }, ST.boss, trafficProtos);
+      addDoge: (n) => { n = Math.max(n, -save.doge); save.doge += n; stats.dogeGain += n; writeSaveSoon(); } }, ST.boss, trafficProtos, ST.bossOpts);
   } catch (e) { console.warn('boss skipped', e); boss = null; }
   $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · ' + [...propCredits(ST.props || []), ...headCredits(HEAD_LIST)].map((c) => c + ' · ').join('') + 'Textures & HDRI: Poly Haven, ambientCG (CC0) · Earth & stars: NASA Blue Marble, Black Marble, SVS Deep Star Maps' + (loadFailed.length ? ' · ⚠ ' + loadFailed.join(' / ') : '');
   resetRace(); placeCar(); syncTraffic(0); syncPickups(0);
