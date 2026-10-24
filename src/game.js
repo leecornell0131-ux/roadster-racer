@@ -1949,7 +1949,9 @@ function refreshSaveLine() { grantParts(); const b = save.camp[ST.evKey]?.best |
 // ---------- campaign ----------
 // every event of every region in play order; an event opens when the one before it is cleared
 const CAMPAIGN = ORDER.flatMap((st, si) => (st.events || [{ id: 'run', name: st.name }]).map((e, i) => ({ st, si, e, i, key: `${st.id}:${e.id}` })));
-const UNLOCK_ALL = new URLSearchParams(location.search).has('unlock');
+// all-pass: every region and event open for testing/trying (poster toggle, or ?unlock); progress still counts
+const URL_UNLOCK = new URLSearchParams(location.search).has('unlock');
+let UNLOCK_ALL = URL_UNLOCK || !!save.allPass;
 const isDone = (k) => !!save.camp[CAMPAIGN[k].key]?.done || (CAMPAIGN[k].e.id === 'run' && !!save.bests[CAMPAIGN[k].st.id]);
 // map progress: each event is worth 4 (clear + 3 stars), each easter egg 1. A region opens when the one
 // before it reaches UNLOCK_PCT (one-run regions: when that run is cleared). Inside a region the tutorial
@@ -1987,6 +1989,11 @@ function nextEvent() {
 }
 const fmtPlay = (t) => (t >= 3600 ? `${Math.floor(t / 3600)}시간 ${Math.floor(t % 3600 / 60)}분` : `${Math.floor(t / 60)}분 ${Math.floor(t % 60)}초`);
 const TYPE_NAME = { tutorial: '연습', deliver: '배송', stunt: '스턴트', rivals: '레이스', boss: '보스전', race: '주행' };
+function allPassUI() {
+  const b = $('passBtn'); if (!b) return;
+  b.textContent = UNLOCK_ALL ? '🔓 올패스 켬' : '🔒 올패스'; b.classList.toggle('on', UNLOCK_ALL);
+  b.onclick = () => { save.allPass = !save.allPass; UNLOCK_ALL = URL_UNLOCK || save.allPass; writeSaveSoon(); haptic('tap'); renderCampaign(); allPassUI(); };
+}
 function renderCampaign() {
   // region chips: progress per region
   $('stagePick').innerHTML = ORDER.map((st, si) => {
@@ -2033,7 +2040,7 @@ function stageUI() {
   $('pTip').innerHTML = EV.brief || T.tip; $('pTweet').textContent = T.tweet; $('pMeta').textContent = T.meta; $('loadTxt').textContent = T.load;
   $('hudStage').textContent = multi ? `${BASE.name} · ${EV.name}` : T.hud;
   $('mTitle').textContent = EV.mission ? EV.name : '';
-  renderCampaign();
+  renderCampaign(); allPassUI();
   document.title = `Roadster Racer · ${ST.name}`;
 }
 
