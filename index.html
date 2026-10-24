@@ -291,6 +291,23 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
 #rGoal.fail b { color: var(--hot); }
 @media (prefers-reduced-motion: reduce) { #landCue.now, #combo.pop b, #prompt.flash { animation: none; } }
 @media (prefers-reduced-motion: reduce) { #toast.show, .float { animation-duration: .01s; } }
+/* phone landscape poster: title and buttons on the left, region / progress / destinations on the right */
+@media (orientation: landscape) and (max-height: 520px) {
+  .pwrap { grid-template-columns: 1fr; }
+  .pwrap > div:first-child { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .95fr); column-gap: 20px; align-items: end; }
+  .pwrap > div:first-child > * { grid-column: 1; }
+  .pwrap > div:first-child > .pick { grid-column: 2; grid-row: 1 / span 6; align-self: end; }
+  .ptitle { font-size: clamp(34px, 7vw, 56px); }
+  .psub { font-size: 15px; } .eyebrow { font-size: 10px; letter-spacing: .22em; }
+  .tip { font-size: 11.5px; line-height: 1.45; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .cta { margin-top: 8px; gap: 8px; } .go { font-size: 17px; padding: 9px 22px; } .ghost { font-size: 13px; padding: 7px 12px; }
+  .evlist { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin: 0; }
+  .ev { padding: 4px 7px; gap: 6px; } .ev b { font-size: 10.5px; } .ev small { font-size: 9px; } .ev .n { font-size: 13px; }
+  .chip { padding: 4px 8px; font-size: 10px; } .stagepick { margin-bottom: 6px; gap: 4px; }
+  #saveLine, #campLine { font-size: 10px; }
+  #credits { max-width: 30vw; font-size: 6px; opacity: .3; }
+  #mapInfo { font-size: 9.5px; } #mapPct { font-size: 12px; } #mapProg { margin-bottom: 5px; }
+}
 </style>
 </head>
 <body>
@@ -300,9 +317,11 @@ html, body { height: 100%; margin: 0; background: var(--ink); color: var(--text)
       <div id="credits"></div>
   <div class="pwrap">
     <div>
-      <div class="stagepick" id="stagePick"></div>
-      <div id="mapProg" hidden><div class="mp"><i id="mapBar"></i></div><b id="mapPct"></b><small id="mapInfo"></small></div>
-      <div class="evlist" id="evList" hidden></div>
+      <div class="pick">
+        <div class="stagepick" id="stagePick"></div>
+        <div id="mapProg" hidden><div class="mp"><i id="mapBar"></i></div><b id="mapPct"></b><small id="mapInfo"></small></div>
+        <div class="evlist" id="evList" hidden></div>
+      </div>
       <div class="eyebrow" id="pEyebrow"></div>
       <div class="ptitle" id="pTitle"></div>
       <div class="psub" id="pSub"></div>
