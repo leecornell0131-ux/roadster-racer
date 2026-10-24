@@ -25,3 +25,8 @@ npx http-server -p 8080 .
 - `src/game.js` 트랙, 물리, 게임 진행
 - `src/models.js` 차량과 GPU 모델 (나중에 GLB 모델로 교체 예정)
 - `tools/build-artifact.mjs` claude.ai 아티팩트용 페이지 생성
+
+## 아이폰 앱 (TestFlight)
+- `ios-app/`: 게임을 앱 안에 넣어 띄우는 아이폰 앱 (가로 화면, 진동은 아이폰 햅틱). 게임 파일은 빌드 때 `node tools/build-ios-web.mjs`가 `ios-app/web/`으로 복사해요.
+- `codemagic.yaml`: Codemagic에서 서명하고 TestFlight에 올려요. 육아앱(babylog)과 같은 API 키·인증서를 써요. 새 맵을 아이폰에서 하려면 Codemagic에서 "Start new build".
+- `.github/workflows/ios.yml`: 아이폰 코드가 빌드되는지만 확인해요(서명 없음).
