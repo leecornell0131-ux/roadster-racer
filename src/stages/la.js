@@ -2,6 +2,7 @@
 // a copycat BYD swarm, overpasses, palms, golden hills, and the HOLLYBYD sign moved onto an overpass.
 import * as THREE from 'three';
 import { prop } from '../props.js';
+import { bigTurns, rampRun, CITY_ROAD } from './city.js';
 
 const ROAD_HALF = 18;
 const FINISH_S = 3300;
@@ -24,6 +25,14 @@ const O = { d: letterD(O_INDEX), y: DECK_TOP + LETTER_H * 0.5, rx: O_W * (0.5 - 
 
 export default {
   id: 'la', num: 2, name: 'LA',
+  city: 'la',
+  eggs: [
+    { id: 'la_star', ev: 'dtla', fork: 0, y: 1.4, name: '명예의 거리 별 조각', line: '할리우드 명예의 거리 별이 왜 다운타운에 있지? 길 잘못 든 사람한테만 주는 상이야.' },
+    { id: 'la_grammy', ev: 'dtla', place: 'Grammy Museum', y: 1.6, name: '도지 그래미 트로피', line: '올해의 앨범: "To the Moon". 작곡 도지, 작사 도지.' },
+    { id: 'la_taco', ev: 'broadway', fork: 0, y: 1.4, name: '사이버 타코 트럭 쿠폰', line: '각진 또띠아 무료 쿠폰. 잘 안 접혀.' },
+    { id: 'la_angel', ev: 'fig', place: 'Cathedral of Our Lady of the Angels', y: 1.6, name: '천사의 날개 스포일러', line: '천사들의 도시 기념 스포일러. 다운포스는 기도로 만든다.' },
+    { id: 'la_clone', ev: 'freeway', s: 1300, d: 15, y: 1.4, name: '카피캣 설계도', line: 'BYD 트레일러에서 떨어진 설계도. 표지에 "로드스터(아님)"이라고 써 있어.' },
+  ],
   roadHalf: ROAD_HALF, lanes: [-15, -9, -3, 3, 9, 15], finish: FINISH_S,
   gaps: [],
   cx(s) {
@@ -93,6 +102,67 @@ export default {
     meta: '오후 3:15 · 로스앤젤레스 · 리트윗 88만', load: 'LA 고속도로 정체 재현 중 · 야자수 심는 중',
     hud: 'STAGE 2 · LOS ANGELES', clear: 'STAGE 02 CLEAR', clearTitle: 'LA 탈출',
   },
+  // chapter 2: three real downtown LA errands on OpenStreetMap streets, then the original 405 run with the boss
+  events: [
+    {
+      id: 'dtla', name: '다운타운 첫 배송', ...CITY_ROAD,
+      brief: '<b>배송</b> 진짜 LA 다운타운 지도예요. 유니언 역에서 시청, 디즈니 콘서트홀, 브래드버리 빌딩, 퍼싱 스퀘어를 거쳐 그래미 뮤지엄까지. 초록 정차 구역에서 <b>↓ 브레이크</b>.',
+      route: { from: 'Union Station', via: ['Los Angeles City Hall', 'Walt Disney Concert Hall', 'Bradbury Building', 'Pershing Square'], to: 'Grammy Museum' },
+      gaps: [], jams: [], swarm: null, ceilings: [], pickups: [], legend: null, holeBonus: null, boss: null, trafficMaxS: 9000,
+      forks: (L, R) => bigTurns(R, 1).map((t) => ({ at: t.s, name: '정상 경로' })),
+      ramps: (L) => rampRun(380, L - 200, 300, 3),
+      mission: { type: 'deliver', time: 150, allowMiss: 1, stops: [
+        { place: 'Los Angeles City Hall', name: 'LA 시청', thanks: '민원 접수 마감 전이에요!', line: '시청 직원 내렸다. 교통체증 대책 회의래. 10년째.' },
+        { place: 'Walt Disney Concert Hall', name: '디즈니 콘서트홀', thanks: '리허설 안 늦었어요' },
+        { place: 'Bradbury Building', name: '브래드버리 빌딩', thanks: '블레이드 러너 촬영지 맞죠?', line: '저 건물 블레이드 러너에 나왔어. 리플리컨트는 로보택시를 안 타.' },
+        { place: 'Pershing Square', name: '퍼싱 스퀘어', thanks: '별 다섯 개!' },
+      ] },
+      radio: [[20, 'LA 다운타운이야. 진짜 길이니까 네비 회전 안내 잘 봐.'], [1500, '여기 사람들은 차가 막히면 차에서 산대. 우린 지붕 위로 달리지.']],
+      lines: { finish: '그래미 뮤지엄 도착. 우리 경적 소리도 후보에 올려 달래.', failed: '손님들이 별점 테러 중이야… 다시 가자.' },
+      poster: { s: 300, d: -6, y: 0, cam: { back: 10, side: 3, y: 2.6, ahead: 8, lookSide: -3, lookY: 1.4, fov: 46 } },
+      finishText: 'FINISH · 그래미 뮤지엄',
+      text: { clear: 'DELIVERY DONE', clearTitle: '배송 완료' },
+    },
+    {
+      id: 'broadway', name: '브로드웨이 스턴트 쇼', ...CITY_ROAD,
+      brief: '<b>스턴트</b> 리틀 도쿄에서 출발해 극장 거리 브로드웨이를 지나 컨벤션 센터까지. 아슬 추월, 배럴롤, 퍼펙트 착지를 이어 <b>콤보 배수</b>를 키워요. 정체 구간은 점프대로 지붕 위로.',
+      route: { from: 'The Geffen Contemporary', via: ['Japanese American National Museum', 'Los Angeles Theatre'], to: 'Los Angeles Convention Center' },
+      gaps: [], swarm: null, ceilings: [], pickups: [], legend: null, holeBonus: null, boss: null, trafficMaxS: 9000,
+      forks: (L, R) => bigTurns(R, 1).map((t) => ({ at: t.s, name: '정상 경로' })),
+      ramps: (L) => { const j = [Math.round(L * 0.3) - 40, Math.round(L * 0.66) - 40];
+        return [...rampRun(260, L - 150, 170, 0).filter((r) => j.every((s) => Math.abs(r.s0 - s) > 110)), ...j.map((s0) => ({ s0, len: 18, dL: -12, dR: 12, h: 3.4 }))]; }, // full width: every lane can hop the jam
+      jams: (L) => [[Math.round(L * 0.3), Math.round(L * 0.3) + 150], [Math.round(L * 0.66), Math.round(L * 0.66) + 150]],
+      jamMix: { bus: 3, waymo: 2, model3: 2, sealion: 2 },
+      mission: { type: 'stunt', scores: [8000, 16000, 28000] },
+      radio: [[20, '브로드웨이 극장 거리 스턴트 쇼야. 관객은 LA 전체. 콤보 끊지 마.'], [700, '앞에 정체! 점프대로 지붕 위로 올라가. 버스는 높으니까 그냥 밟고 올라타.']],
+      lines: { finish: '극장 간판보다 우리가 더 빛났어. 이제 피게로아에서 한판 붙자.', failed: '박수가 좀 약했어. 콤보를 끊지 말고 이어 봐.' },
+      poster: { s: 400, d: 2, y: 0, cam: { back: 9, side: -4, y: 1.6, ahead: 10, lookSide: -2, lookY: 2.6, fov: 46 } },
+      finishText: 'FINISH · LA 컨벤션 센터',
+      text: { clear: 'SHOW TIME', clearTitle: '스턴트 쇼 성공' },
+    },
+    {
+      id: 'fig', name: '그랜드 애비뉴 드래그', ...CITY_ROAD,
+      brief: '<b>레이스</b> 천사들의 성당에서 그랜드 애비뉴를 쭉 내려가 컨벤션 센터까지 3km 직선 승부. 상대는 BYD 씰라이언 셋. 깜빡이 반대쪽으로 추월해요.',
+      route: { from: 'Cathedral of Our Lady of the Angels', to: 'Los Angeles Convention Center' },
+      gaps: [], jams: [], swarm: null, ceilings: [], pickups: [], legend: null, holeBonus: null, boss: null, trafficMaxS: 9000,
+      ramps: (L) => rampRun(300, L - 150, 230, 1),
+      mission: { type: 'rivals', time: 60, perfect: 2, rivals: [
+        { type: 'sealion', name: 'BYD 씰라이언 #1', label: 'SEALION 1', speed: 56, d: -3, s: 24 },
+        { type: 'sealion', name: 'BYD 씰라이언 #2', label: 'SEALION 2', speed: 58, d: 9, s: 30 },
+        { type: 'dolphin', name: '돌핀 카피캣', label: 'COPYCAT', speed: 59, d: -9, s: 36, tagColor: '#ffc83d' },
+      ] },
+      radio: [[20, '그랜드 애비뉴 직선이야. BYD 셋이 우리 차 베꼈다고 자랑하러 왔대. 본때를 보여 줘.'], [1600, '끝에서 우회전하면 결승이야. 코너 전에 브레이크!']],
+      lines: { finish: '카피캣은 역시 원본을 못 따라와. 이제 405번 고속도로로 가자. 회장님 트레일러가 기다려.', failed: '복사본한테 졌다고? 퍼펙트 착지 부스트로 붙어.' },
+      poster: { s: 400, d: -3, y: 0, cam: { back: 10, side: 3, y: 2.2, ahead: 8, lookSide: -3, lookY: 1.4, fov: 46 } },
+      finishText: 'FINISH · LA 컨벤션 센터',
+      text: { clear: 'WINNER', clearTitle: '드래그 레이스 우승' },
+    },
+    {
+      id: 'freeway', name: '405 탈출 · 클론 트레일러',
+      brief: '<b>보스전</b> 405번 고속도로 10차선 정체. 차 지붕 위로 달리고, BYD 회장님 트레일러가 뽑아내는 클론을 피해서 <b>F(⚡) 코일</b>과 점프 공격으로 격추해요. 할리바이드 사인 O 구멍도 노려 봐요.',
+      mission: { type: 'boss', time: 75, perfect: 4 },
+    },
+  ],
   build,
 };
 
