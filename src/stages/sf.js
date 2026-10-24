@@ -2,6 +2,7 @@
 // you (Bullitt style), Victorian rows, a ClosedAI data center leaking coolant, a Lombard-style zigzag,
 // then the Golden Gate: ride up the main cable, fly off the tower top, try to land back on it.
 import * as THREE from 'three';
+import { bigTurns, rampRun, CITY_ROAD } from './city.js';
 
 const ROAD_HALF = 12;
 const FINISH_S = 3060;
@@ -46,8 +47,25 @@ const cableW = (s) => 4.2 - 2.75 * ramp01(s);
 
 const PUDDLES = [[968, -3], [992, 9], [1015, 3], [1038, -9], [1060, -3], [1078, 9]].map(([s, d]) => ({ s, d, l: 3.4, w: 2.1 }));
 
+// traffic on the real-map events: the stage's mix, cable cars allowed along the whole route
+const CITY_TRAFFIC = {
+  waymo: { car: 'ioniq5', kit: true, name: '웨이모', speed: [19, 23], brakes: true, n: 9 },
+  robotaxi: { car: 'modely', name: '테슬라 로보택시', speed: [30, 34], color: '#f2f2f0', n: 4 },
+  model3: { car: 'model3', name: '모델 3', speed: [26, 32], n: 3 },
+  cybertruck: { car: 'cybertruck', name: '사이버트럭', speed: [24, 29], n: 2 },
+  cablecar: { make: makeCableCar, name: '케이블카', speed: [8, 10], n: 2, lanes: [-3, 3], range: [200, 9000], color: '#8b1e1c' },
+};
+
 export default {
   id: 'sf', num: 3, name: 'SF',
+  city: 'sf',
+  eggs: [
+    { id: 'sf_seal', ev: 'wharf', place: 'Fishermans Wharf of San Francisco', y: 1.4, name: '피어 39 바다사자 인형', line: '바다사자가 로드스터 보닛에서 낮잠 자고 싶대. 거절했어.' },
+    { id: 'sf_choc', ev: 'wharf', fork: 0, y: 1.4, name: '기라델리 초콜릿 바', line: '우회로로 온 보상. 녹기 전에 먹어. 배터리 열관리보다 급해.' },
+    { id: 'sf_book', ev: 'chinatown', place: 'City Lights Booksellers', y: 1.6, name: '시티라이츠 초판 시집', line: '비트 세대 시집이네. 제목은 "울부짖음". 우리 모터 소리 얘기 같아.' },
+    { id: 'sf_cookie', ev: 'chinatown', fork: 0, y: 1.4, name: '포춘쿠키', line: '"당신의 AGI는 다음 달에 나옵니다." 36개월째 같은 쪽지야.' },
+    { id: 'sf_token', ev: 'market', s: 1200, d: 9, y: 1.4, name: '케이블카 토큰', line: '케이블카 공짜 탑승권. 우리 차가 더 빠르지만.' },
+  ],
   roadHalf: ROAD_HALF, lanes: [-9, -3, 3, 9], finish: FINISH_S,
   gaps: [],
   elev,
@@ -113,6 +131,69 @@ export default {
     meta: '오전 2:47 · 샌프란시스코 · 리트윗 120만', load: 'SF 안개 깔는 중 · 언덕 경사 재는 중',
     hud: 'STAGE 3 · SAN FRANCISCO', clear: 'STAGE 03 CLEAR', clearTitle: '안개 속 탈출',
   },
+  // chapter 3: three errands on real San Francisco streets (OpenStreetMap), then the original hills-and-bridge run
+  events: [
+    {
+      id: 'wharf', name: '워터프런트 배송', ...CITY_ROAD,
+      brief: '<b>배송</b> 진짜 SF 지도예요. 페리 빌딩에서 엠바카데로를 따라 익스플로라토리움, 피셔맨스 워프, 기라델리 스퀘어를 거쳐 롬바드 스트리트 지그재그까지. 초록 정차 구역에서 <b>↓ 브레이크</b>.',
+      route: { from: 'San Francisco Ferry Building', via: ['Exploratorium', 'Fishermans Wharf of San Francisco', 'Ghirardelli Chocolate Experience'], to: 'Lombard Street' },
+      elev: null, surfaces: [], wide: null, splashY: null, blocks: [], puddles: [], legend: null, pickups: [], gaps: [], boss: null, trafficMaxS: 9000,
+      forks: (L, R) => bigTurns(R, 1).map((t) => ({ at: t.s, name: '정상 경로' })),
+      ramps: (L) => rampRun(380, L - 300, 300, 3),
+      traffic: CITY_TRAFFIC,
+      mission: { type: 'deliver', time: 140, allowMiss: 1, stops: [
+        { place: 'Exploratorium', name: '익스플로라토리움', thanks: '과학 시간 안 늦었어요!' },
+        { place: 'Fishermans Wharf of San Francisco', name: '피셔맨스 워프', thanks: '클램 차우더 먹으러 왔어요', line: '바다사자들이 우리 차 보고 박수 쳤어. 진짜야.' },
+        { place: 'Ghirardelli Chocolate Experience', name: '기라델리 스퀘어', thanks: '초콜릿 안 녹았어요!' },
+      ] },
+      radio: [[20, '샌프란시스코 진짜 길이야. 엠바카데로 따라 바닷가로 간다. 웨이모 진짜 많으니까 조심.'], [3000, '마지막은 롬바드 스트리트! 세상에서 제일 구불구불한 길이야. 천천히.']],
+      lines: { finish: '롬바드 꼭대기 도착. 관광객들이 우리 차 사진만 찍더라.', failed: '손님들이 별점 테러 중이야… 다시 가자.' },
+      poster: { s: 300, d: -6, y: 0, cam: { back: 10, side: 3, y: 2.6, ahead: 8, lookSide: -3, lookY: 1.4, fov: 46 } },
+      finishText: 'FINISH · 롬바드 스트리트',
+      text: { clear: 'DELIVERY DONE', clearTitle: '배송 완료' },
+    },
+    {
+      id: 'chinatown', name: '차이나타운 스턴트 쇼', ...CITY_ROAD,
+      brief: '<b>스턴트</b> 차이나타운 드래곤 게이트에서 노스비치를 돌아 트랜스아메리카 피라미드까지. 아슬 추월, 배럴롤, 퍼펙트 착지로 <b>콤보 배수</b>. 정체 구간은 점프대로 지붕 위로.',
+      route: { from: 'Dragon Gate', via: ['City Lights Booksellers', 'Saints Peter and Paul Church'], to: 'Transamerica Pyramid' },
+      elev: null, surfaces: [], wide: null, splashY: null, blocks: [], puddles: [], legend: null, pickups: [], gaps: [], boss: null, trafficMaxS: 9000,
+      forks: (L, R) => bigTurns(R, 1).map((t) => ({ at: t.s, name: '정상 경로' })),
+      ramps: (L) => { const j = [Math.round(L * 0.3) - 40, Math.round(L * 0.68) - 40];
+        return [...rampRun(260, L - 150, 170, 0).filter((r) => j.every((s) => Math.abs(r.s0 - s) > 110)), ...j.map((s0) => ({ s0, len: 18, dL: -12, dR: 12, h: 3.4 }))]; }, // full width: every lane can hop the jam
+      jams: (L) => [[Math.round(L * 0.3), Math.round(L * 0.3) + 140], [Math.round(L * 0.68), Math.round(L * 0.68) + 140]],
+      jamMix: { waymo: 4, model3: 2, robotaxi: 2 },
+      traffic: CITY_TRAFFIC,
+      mission: { type: 'stunt', scores: [7000, 14000, 24000] },
+      radio: [[20, '차이나타운 스턴트 쇼야. 등불 아래서 배럴롤 한번 보여 줘.'], [800, '웨이모 정체! 전부 라이다가 서로 감지해서 멈춘 거야. 점프대로 지붕 위로!']],
+      lines: { finish: '피라미드 앞에서 착지 완벽. 이제 마켓 스트리트에서 웨이모랑 붙자.', failed: '박수가 좀 약했어. 콤보를 끊지 말고 이어 봐.' },
+      poster: { s: 400, d: 2, y: 0, cam: { back: 9, side: -4, y: 1.6, ahead: 10, lookSide: -2, lookY: 2.6, fov: 46 } },
+      finishText: 'FINISH · 트랜스아메리카 피라미드',
+      text: { clear: 'SHOW TIME', clearTitle: '스턴트 쇼 성공' },
+    },
+    {
+      id: 'market', name: '마켓 스트리트 드래그', ...CITY_ROAD,
+      brief: '<b>레이스</b> 페리 빌딩 앞에서 마켓 스트리트를 쭉 따라 파월 케이블카 회전대 너머까지 직선 승부. 상대는 웨이모 셋. 웨이모는 장애물을 보면 급정거하니까 뒤에 바짝 붙지 마요.',
+      route: { from: [1350, -250], via: ['Cable Car Turntable (Powell & Market)'], to: [-300, 1390] }, // Market St from the Ferry Building end, past Powell
+      elev: null, surfaces: [], wide: null, splashY: null, blocks: [], puddles: [], legend: null, pickups: [], gaps: [], jams: [], boss: null, trafficMaxS: 9000,
+      ramps: (L) => rampRun(300, L - 150, 230, 1),
+      traffic: { ...CITY_TRAFFIC, waymo: { ...CITY_TRAFFIC.waymo, n: 5 } },
+      mission: { type: 'rivals', time: 42, perfect: 2, rivals: [
+        { type: 'waymo', name: '웨이모 #1', label: 'WAYMO 1', speed: 52, d: -3, s: 24 },
+        { type: 'waymo', name: '웨이모 #2', label: 'WAYMO 2', speed: 54, d: 9, s: 30 },
+        { type: 'waymo', name: '웨이모 #3', label: 'WAYMO 3', speed: 56, d: -9, s: 36, tagColor: '#ffc83d' },
+      ] },
+      radio: [[20, '마켓 스트리트 직선이야. 웨이모 셋이 시승 대결 신청했어. 라이다 47개로 우리 카메라 8개를 이기겠대.'], [1300, '파월 회전대 지나간다! 케이블카 조심!']],
+      lines: { finish: '웨이모 셋 다 급정거 중. 이제 언덕 넘어 금문교로 가자. 샘의 오브가 기다려.', failed: '웨이모한테 졌다고? 걔들 급정거할 때 옆으로 빠져.' },
+      poster: { s: 400, d: -3, y: 0, cam: { back: 10, side: 3, y: 2.2, ahead: 8, lookSide: -3, lookY: 1.4, fov: 46 } },
+      finishText: 'FINISH · 마켓 스트리트',
+      text: { clear: 'WINNER', clearTitle: '드래그 레이스 우승' },
+    },
+    {
+      id: 'hills', name: '언덕과 금문교 · AGI 오브',
+      brief: '<b>보스전</b> 놉힐 언덕 점프, 롬바드 지그재그, 금문교 케이블 위까지. AGI 오브를 <b>F(⚡) 코일</b>과 점프 공격으로 격추해요. 탑 꼭대기에서 날아오르면 대박.',
+      mission: { type: 'boss', time: 72, perfect: 5 },
+    },
+  ],
   build,
   tick,
 };
@@ -132,6 +213,8 @@ const live = { water: null, fog: [], steam: [], crown: null, puddles: null };
 
 function build(k) {
   const { scene } = k;
+  // real-map events: OpenStreetMap streets and buildings instead of the hand-made hills
+  if (k.CITY) { k.buildCity(); k.finishArch(k.ST.finishText || 'FINISH'); return; }
   const walk = new THREE.MeshStandardMaterial({ map: k.photo('sf_walk_diff.jpg', { rep: [0.25, 0.25] }), normalMap: k.photo('sf_walk_nor.jpg', { srgb: false, rep: [0.25, 0.25] }), color: '#c9c1bb', roughness: 0.85 });
   const lot = new THREE.MeshStandardMaterial({ map: k.photo('sf_walk_diff.jpg', { rep: [1 / 8, 1 / 8] }), color: '#8d8580', roughness: 0.95 });
   const asphalt = new THREE.MeshStandardMaterial({ map: k.photo('asphalt_diff.jpg', { rep: [1 / 10, 1 / 10] }), color: '#7b7680', roughness: 0.92 });
