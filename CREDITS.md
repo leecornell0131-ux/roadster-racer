@@ -20,3 +20,21 @@ NC (non-commercial) models must be replaced before any paid release.
 Textures (CC0): Poly Haven asphalt_02, concrete_pavement, concrete_wall_008, sparse_grass, aerial_sand; ambientCG Facade006, Facade009, Facade018A, Facade020A. HDRI (CC0, Poly Haven): Highway Bridge Sunset (Austin), Kloofendal 48d Partly Cloudy Puresky (LA).
 
 Parked-traffic LODs in assets/cars/lod/ are simplified copies of the models above (same licenses).
+
+## Props and boss bodies (assets/props/, all CC BY 4.0, simplified and recompressed)
+
+| Model | Author | Used for |
+|---|---|---|
+| Car Carrier Trailer Low-poly | Dakta.Grower.Nzl | LA clone-trailer boss |
+| Semi Truck Baked | 3DE_Study | LA traffic |
+| Ice Cream Truck | Pooi Woon Hoh | DC ice-cream truck boss |
+| Boeing 747 Air Force One | JUSTGAME | DC drone boss (phase 2) |
+| VR Headset Free Model | Vitamin | Metaverse headset boss |
+| L30 Airship | BocajLegMeat | SF hype blimp |
+| SpaceX Falcon 9 Block 5 | AllThingsSpace | Starbase display (lettering texture removed) |
+| SpaceX Starship | AllThingsSpace | Starbase rocket garden, Mars city |
+| Starlink Spacex Satellite | Malacodart | Starlink orbit neighbours |
+| Tesla Optimus | mriexinger | Mars delivery carts |
+| Palm tree / Palm Tree | galaxxxy / Arvid Klint | not used (too stylised next to the LA palms) |
+
+Source files: tools/pack-model.mjs from the Sketchfab downloads; sizing and facing in src/props.js.

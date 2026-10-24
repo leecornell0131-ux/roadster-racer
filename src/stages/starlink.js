@@ -85,6 +85,7 @@ export default {
   lines: { finish: '도킹 완료! 다음 정거장은 달이다!', fall: ['궤도 이탈!', '+3초', '스타쉽이 다시 건져 왔어. 조심!'] },
   stars: { time: 60, text: '완주 · 60초 이내 · 퍼펙트 랜딩 4회', perfect: 4 },
   finishDelay: 9000,
+  props: ['starlink'],
   poster: { s: 1428, d: 2, y: 6, boss: [0, 0, 0], cam: { back: 15, side: -7, y: 3, ahead: 70, lookSide: 12, lookY: 4, fov: 60 } },
   text: {
     eyebrow: 'STAGE 07 · STARLINK ORBIT', title: 'ORBIT', sub: '위성이 도로가 되는 곳',
@@ -226,6 +227,7 @@ function build(k) {
   buildMoonSun(k);
   buildDebris(k);
   buildShips(k);
+  buildNeighbours(k);
   k.finishArch('FINISH · 스타쉽 도킹');
 }
 
@@ -296,6 +298,18 @@ function buildTrains(k) {
   const lg = new THREE.BufferGeometry().setFromPoints(pts);
   const links = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: new THREE.Color(2.2, 0.25, 0.3), transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
   k.scene.add(links); live.links = links;
+}
+
+// a few real satellites close to the deck, close enough to see the solar array cells
+function buildNeighbours(k) {
+  if (!k.prop('starlink')) return;
+  const r = rnd(23);
+  for (let s = 140; s < FINISH_S; s += 150 + r() * 120) {
+    const sat = k.prop('starlink', 9 + r() * 4), side = r() < 0.5 ? -1 : 1;
+    k.world(s, side * (ROAD_HALF + 14 + r() * 30), -6 + r() * 22, sat.position);
+    sat.rotation.set(Math.PI / 2 + (r() - 0.5) * 0.6, k.frame(s).yaw + (r() - 0.5) * 1.2, side * (0.4 + r() * 0.5));
+    k.scene.add(sat);
+  }
 }
 
 // ---------- Earth: NASA Blue Marble + Black Marble (public domain), clouds from noise, an atmosphere rim ----------

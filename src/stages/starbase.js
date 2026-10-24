@@ -84,6 +84,7 @@ export default {
   lines: { finish: '젓가락이 우릴 집어 올린다! 스타쉽 합체… 발사!' },
   stars: { time: 62, text: '완주 · 62초 이내 · 퍼펙트 랜딩 4회', perfect: 4 },
   finishDelay: 9000,
+  props: ['starship', 'falcon9'],
   poster: { s: 2925, d: -2, y: 5, boss: [0, 0, 0], cam: { back: 15, side: -7, y: 1.5, ahead: 190, lookSide: 22, lookY: 55, fov: 56 } },
   text: {
     eyebrow: 'STAGE 06 · STARBASE', title: 'STARBASE', sub: '스타쉽에 합체하라',
@@ -313,10 +314,13 @@ function buildTents(k, rand) {
   im.castShadow = true; im.receiveShadow = true; k.scene.add(im);
 }
 function buildRocketGarden(k) {
+  // a flown Falcon 9 booster on display at the garden's entrance
+  const f9 = k.prop('falcon9', 70);
+  if (f9) { k.world(660, -40, 0.3, f9.position); f9.rotation.y = 0.6; k.scene.add(f9); const st = new THREE.Mesh(new THREE.CylinderGeometry(6, 7, 0.6, 32), MAT.concrete); k.world(660, -40, 0.3, st.position); k.scene.add(st); }
   // stainless prototypes standing in a row (some ships, two boosters), the garden by the highway
   const spots = [[700, -46, 'ship'], [732, -58, 'ship'], [765, -48, 'booster'], [800, -62, 'ship'], [836, -50, 'ship'], [880, -66, 'booster']];
   for (const [s, d, kind] of spots) {
-    const r = kind === 'ship' ? makeShip({ tiles: Math.random() < 0.6 }) : makeBooster();
+    const r = kind === 'ship' ? (k.prop('starship') || makeShip({ tiles: Math.random() < 0.6 })) : makeBooster();
     k.world(s, d, 0.3, r.position); r.rotation.y = Math.random() * 6.28; k.scene.add(r);
     const stand = new THREE.Mesh(new THREE.CylinderGeometry(R + 1.2, R + 1.6, 0.6, 32), MAT.concrete); k.world(s, d, 0.3, stand.position); k.scene.add(stand);
   }

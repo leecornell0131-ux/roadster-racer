@@ -56,6 +56,7 @@ export default {
   },
   jamMix: { suv: 8, model3: 3, robotaxi: 2, bus: 1 },
   boss: 'icecream',
+  props: ['icecream', 'af1'],
   radio: [
     [20, '워싱턴 DC야. 링컨 기념관에서 출발해서 의사당까지 컨스티튜션 애비뉴를 달린다.'],
     [200, '오른쪽이 리플렉팅 풀. 물에 비친 워싱턴 기념탑 봐. 진짜 거울 같지?'],

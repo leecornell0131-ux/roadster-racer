@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { instance, addSensorKit } from './realcars.js';
 import { wheel, makeRTX5090 } from './models.js';
+import { prop } from './props.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 const LANE_W = 6;
@@ -48,6 +49,8 @@ export function buildWaymoMothership(proto) {
 // a cloning reactor glowing on the headboard. It drives on the road; the clones roll off the back.
 const CLONE_COLOR = '#2f8797';
 export function buildCloneTrailer(protos) {
+  const real = prop('carrier', 22);
+  if (real) return buildCarrierTrailer(protos, real);
   const g = new THREE.Group();
   const bus = instance(protos.bus, '#f2f2f0'); bus.position.z = -8.6; g.add(bus);
   const steel = new THREE.MeshStandardMaterial({ color: '#30343a', metalness: 0.85, roughness: 0.38 });
@@ -87,6 +90,30 @@ export function buildCloneTrailer(protos) {
   holo.material.color.setScalar(2); holo.position.set(0, 7.2, z0 + 0.6); holo.rotation.y = Math.PI; g.add(holo);
   const size = new THREE.Vector3(W, 6, 31.5);
   g.userData = { size, pivots: [], jets: [], eyeMat, eye, holo, rear: z0 + L + 3.2, front: 15.2 };
+  return g;
+}
+
+// the Sketchfab car carrier (truck at -z, trailer behind it): clones ride its decks, the reactor sits on the rack over the cab
+function buildCarrierTrailer(protos, real) {
+  const g = new THREE.Group(); g.add(real);
+  const clones = [];
+  for (const [y, z, tilt] of [[2.78, 8.6, 0], [2.78, 4.1, 0], [2.86, -0.3, -0.03], [0.42, 2.2, 0]]) {
+    const c = instance(protos.dolphin, CLONE_COLOR); c.position.set(0, y, z); c.rotation.x = tilt; g.add(c); clones.push(c);
+  }
+  const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 0.25, 0.2), toneMapped: false });
+  const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 2.2, 28), new THREE.MeshPhysicalMaterial({ color: '#202428', metalness: 0.9, roughness: 0.25, clearcoat: 1 }));
+  tank.rotation.z = Math.PI / 2; tank.position.set(0, 4.7, -3.6); g.add(tank);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.7, 24, 16), eyeMat); eye.position.copy(tank.position); eye.scale.set(1.5, 1, 1); eye.name = 'eye'; g.add(eye);
+  for (const x of [-1.15, 1.15]) { const r = new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.1, 8, 28), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 2.4, 3.2), toneMapped: false })); r.rotation.y = Math.PI / 2; r.position.set(x * 0.8, 4.7, -3.6); g.add(r); }
+  const strut = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1, 0.5), new THREE.MeshStandardMaterial({ color: '#30343a', metalness: 0.85, roughness: 0.38 })); strut.position.set(0, 3.8, -3.6); g.add(strut);
+  const c = document.createElement('canvas'); c.width = 512; c.height = 160; const x = c.getContext('2d');
+  x.font = '900 120px "Black Han Sans", sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.shadowColor = '#ff2a3a'; x.shadowBlur = 20; x.fillStyle = '#ff5a5a'; x.fillText('-50%', 256, 84);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const holo = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 1.4), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+  holo.material.color.setScalar(2); holo.position.set(0, 6.5, -3.6); holo.rotation.y = Math.PI; g.add(holo);
+  // standing surfaces (local z, backward positive): the truck roof, then the clones on the top deck
+  const roofs = [{ z0: -11, z1: -6.4, top: 2.95 }, { z0: -2.4, z1: 10.8, top: 4.3 }];
+  g.userData = { size: new THREE.Vector3(2.9, 5, 24), pivots: [], jets: [], eyeMat, eye, holo, rear: 12.4, front: 11, roofs };
   return g;
 }
 
@@ -191,6 +218,16 @@ export function buildHeadset() {
   // hover glow
   const haloMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 1.2, 3.2), toneMapped: false, transparent: true, opacity: 0.8 });
   const halo = new THREE.Mesh(new THREE.TorusGeometry(2.8, 0.12, 8, 48), haloMat); halo.rotation.x = Math.PI / 2; halo.position.y = -H / 2 - 0.8; g.add(halo);
+  // the real headset (when it loaded): its front box is the body, the strap trails behind; the face screen sits on its front
+  const real = prop('vrheadset', 14);
+  if (real) {
+    for (const o of [body, visor, strap, top]) g.remove(o);
+    for (const o of g.children.filter((o) => o.geometry?.type === 'CylinderGeometry' && o !== tongue)) g.remove(o);
+    real.position.set(0, -2.3, -5); g.add(real);
+    screen.position.z = D / 2 + 0.06; screen.scale.set(0.86, 0.86, 1); eye.position.z = D / 2 + 0.1;
+    real.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.multiplyScalar(2.2); o.material.envMapIntensity = 2.5; } });
+    label.position.set(0, H / 2 + 0.05, 0.4); label.rotation.x = -Math.PI / 2;
+  }
   const size = new THREE.Vector3(W, H, D);
   g.userData = { size, pivots: [], jets: [halo], eyeMat, eye, eyeCol: new THREE.Color(0.32, 0.32, 0.32), happy, lizard, tongue, screen };
   return g;
@@ -249,6 +286,16 @@ function buildAF1Drone() {
     for (const k of [1.8, 3.6]) { const e = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.22, 1.2, 20), metal); e.rotation.x = Math.PI / 2; e.position.set(sx * k, -0.75, -1.2 + k * 0.45); g.add(e); }
   }
   const fin = new THREE.Mesh(wingGeo, blue); fin.rotation.set(0, -Math.PI / 2, Math.PI / 2); fin.scale.set(0.5, 0.62, 1); fin.position.set(0.07, 0.4, L / 2 - 0.4); g.add(fin);
+  // the real 747 (when it loaded) replaces the hand-built fuselage, wings and fin; the drone bits stay
+  const real = prop('af1', 12);
+  if (real) {
+    for (const o of g.children.splice(0)) o.geometry?.dispose();
+    real.position.set(0, -1.05, 0.2); g.add(real);
+    for (const sx of [-1, 1]) {
+      const lab = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 0.4), new THREE.MeshBasicMaterial({ map: wordTex('AIR FORCE WON', '#1d3557'), transparent: true }));
+      lab.position.set(sx * 0.62, 0.05, -1.2); lab.rotation.y = sx * Math.PI / 2; g.add(lab);
+    }
+  }
   // it's a drone: four lift rotors on outriggers
   const pivots = [];
   for (const [x, z] of [[-3.4, -3.2], [3.4, -3.2], [-3.4, 3.6], [3.4, 3.6]]) {
@@ -266,6 +313,8 @@ function buildAF1Drone() {
   g.userData = { pivots, eye, eyeMat, horn };
   return g;
 }
+// measured off the Sketchfab truck (truck body 11.4 m) (local z, backward positive)
+const REAL_ICE = { scale: 1.31, backY: 2.9, backZ: -0.04, coneY: 6, coneZ: 2.5, roofs: [{ z0: -5.7, z1: 5.6, top: 4.9 }] };
 export function buildIceTruck() {
   const g = new THREE.Group();
   const K = 1.5, L = 7.6 * K, W = 2.5 * K;
@@ -326,11 +375,21 @@ export function buildIceTruck() {
   const tip = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.5, 16), cream); tip.position.y = 4.65; coneG.add(tip);
   const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.3, 0.5), toneMapped: false, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false });
   const eye = new THREE.Mesh(new THREE.SphereGeometry(1.5, 20, 14), eyeMat); eye.position.y = 3.2; eye.scale.y = 1.6; coneG.add(eye);
+  // the real truck (when it loaded) replaces the hand-built body; the rear menu art and the cone's glow stay
+  const real = prop('icecream', L * REAL_ICE.scale); // the file's bounds run long: the truck itself is 1/1.31 of them
+  let roofs = [{ z0: -L / 2 + 0.2, z1: zCab, top: 0.8 * K + cabH }, { z0: zCab, z1: L / 2 - 0.1, top: roofY }];
+  if (real) {
+    for (const o of g.children.splice(0)) if (o === back || o === coneG) g.add(o);
+    for (const o of coneG.children.splice(0)) if (o === eye) coneG.add(o);
+    g.add(real); back.scale.set(0.82, 0.82, 1); back.position.set(0, REAL_ICE.backY, L / 2 + REAL_ICE.backZ);
+    coneG.position.set(0, REAL_ICE.coneY, REAL_ICE.coneZ); eye.position.y = 1.2; eye.scale.set(0.6, 1, 0.6);
+    roofs = REAL_ICE.roofs;
+  }
   // the drone that joins in phase 2
   const drone = buildAF1Drone(); drone.position.set(0, roofY + 8, 0); drone.visible = false; g.add(drone);
   const size = new THREE.Vector3(W, roofY + 4.8, L);
   g.userData = { size, pivots: drone.userData.pivots, jets: [], eyeMat, eye, holo: coneG, cone: coneG, drone, droneY: roofY + 4.2, eyeCol: new THREE.Color(0.35, 0.1, 0.18), rear: L / 2, front: L / 2,
-    roofs: [{ z0: -L / 2 + 0.2, z1: zCab, top: 0.8 * K + cabH }, { z0: zCab, z1: L / 2 - 0.1, top: roofY }] };
+    roofs };
   return g;
 }
 

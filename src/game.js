@@ -7,6 +7,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100, makeBlackwell } from './models.js';
 import { upgradeRoadster, loadCar, instance, addSensorKit, fleet, CARS } from './realcars.js';
 import { createBoss } from './boss.js';
+import { loadProps, prop, propCredits } from './props.js';
 import { STAGES, ORDER } from './stages/index.js';
 
 // ---------- quality ----------
@@ -423,7 +424,7 @@ function placeBuildings(kinds) {
     scene.add(inst);
   });
 }
-const kit = { THREE, scene, sky, Q, IS_MOBILE, M, world, frame, elev, ribbon, wall, crossWall, grid, photo, canvasTex, textTex, addBillboard, FACADES, facadeMat, placeBuildings, finishArch };
+const kit = { THREE, scene, sky, prop, Q, IS_MOBILE, M, world, frame, elev, ribbon, wall, crossWall, grid, photo, canvasTex, textTex, addBillboard, FACADES, facadeMat, placeBuildings, finishArch };
 
 // ---------- vehicles ----------
 // ---------- pickups ----------
@@ -502,7 +503,9 @@ function resetRace() {
 const TRAFFIC = ST.traffic;
 const trafficProtos = {};
 const lodProtos = {}; // simplified copies for parked jams
+const propsReady = loadProps(ST.props || []);
 const trafficReady = Promise.all(Object.entries(TRAFFIC).map(async ([k, d]) => {
+  await propsReady;
   try { const pr = d.make ? d.make() : await loadCar(d.car); trafficProtos[k] = d.kit ? addSensorKit(pr) : pr; }
   catch (e) { console.warn('traffic model failed, using stand-in', k, e); }
   if (ST.jams && ST.jamMix?.[k]) try { const pr = await loadCar(d.car, true); lodProtos[k] = d.kit ? addSensorKit(pr) : pr; } catch { lodProtos[k] = trafficProtos[k]; }
@@ -1285,6 +1288,7 @@ const carReady = Promise.race([
   new Promise((ok) => setTimeout(ok, 20000)),
 ]);
 async function boot() {
+  await propsReady;
   buildWorld();
   await carReady; await trafficReady;
   try {
@@ -1292,7 +1296,7 @@ async function boot() {
       addPuddle: (q) => PUDDLES.push(q), removePuddle: (q) => { const i = PUDDLES.indexOf(q); if (i >= 0) PUDDLES.splice(i, 1); },
       addDoge: (n) => { n = Math.max(n, -save.doge); save.doge += n; stats.dogeGain += n; writeSaveSoon(); } }, ST.boss, trafficProtos);
   } catch (e) { console.warn('boss skipped', e); boss = null; }
-  $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · Textures & HDRI: Poly Haven, ambientCG (CC0) · Earth & stars: NASA Blue Marble, Black Marble, SVS Deep Star Maps';
+  $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · ' + propCredits(ST.props || []).map((c) => c + ' · ').join('') + 'Textures & HDRI: Poly Haven, ambientCG (CC0) · Earth & stars: NASA Blue Marble, Black Marble, SVS Deep Star Maps';
   resetRace(); placeCar(); syncTraffic(0); syncPickups(0);
   state = 'poster';
   $('startBtn').disabled = false; $('startBtn').textContent = '출발';

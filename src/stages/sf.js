@@ -92,6 +92,7 @@ export default {
     cablecar: { make: makeCableCar, name: '케이블카', speed: [8, 10], n: 3, lanes: [-3, 3], range: [160, 1150], color: '#8b1e1c' },
   },
   boss: 'orb',
+  props: ['airship'],
   radio: [
     [20, '샌프란시스코야. 언덕이 미쳤어. 꼭대기 교차로는 평평해서, 속도 그대로 넘으면 붕 떠.'],
     [250, '날아오르면 공중에서 점프 꾹! 착지가 퍼펙트면 속도가 붙어.'],
@@ -170,6 +171,7 @@ function build(k) {
   buildWater(k);
   buildMarin(k, grass, rock);
   buildFog(k);
+  buildBlimp(k);
   k.finishArch('FINISH · 마린 비스타 포인트');
 }
 
@@ -620,4 +622,16 @@ function makeCableCar() {
   }
   g.userData = { kind: 'cablecar', cfg: { colors: ['#8b1e1c'] }, size: new THREE.Vector3(W, 3.5, L) };
   return g;
+}
+
+// a hype airship drifting over the city, trailing AGI promises
+function buildBlimp(k) {
+  const a = k.prop('airship', 110); if (!a) return;
+  const g = new THREE.Group(); g.add(a);
+  for (const sx of [-1, 1]) {
+    const b = new THREE.Mesh(new THREE.PlaneGeometry(56, 9), new THREE.MeshBasicMaterial({ map: k.textTex('AGI 다음 달 출시 · 진짜로', '#ffd23f', { w: 1024, h: 160, size: 92, bg: '#141018' }), side: THREE.DoubleSide, toneMapped: false }));
+    b.material.color.setScalar(1.4); b.position.set(sx * 10.6, 9, 4); b.rotation.y = sx * Math.PI / 2; g.add(b);
+  }
+  k.world(1150, 70, 55, g.position); g.rotation.y = k.frame(1150).yaw + 0.9; k.scene.add(g);
+  live.blimp = g;
 }

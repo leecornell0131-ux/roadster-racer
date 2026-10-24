@@ -4,6 +4,7 @@
 // Final boss: the AGI Overlord, three tech heads fighting over one GPU mecha.
 // The ending: the city switches on and the camera rises over it.
 import * as THREE from 'three';
+import { prop } from '../props.js';
 import { shipKit } from './starbase.js';
 
 const ROAD_HALF = 12;
@@ -75,6 +76,7 @@ export default {
     optimus: { make: makeOptimusCart, name: '옵티머스 배달 카트', speed: [15, 19], n: 4, color: '#eeeeee' },
   },
   boss: 'agi',
+  props: ['optimus', 'starship'],
   radio: [
     [20, '화성이다! 마지막 스테이지. 먼지폭풍 오면 시야가 확 줄어.'],
     [380, '모래 언덕 지나면 올림푸스 몬스. 태양계에서 제일 높은 산이야!'],
@@ -147,13 +149,17 @@ function makeOptimusCart() {
     const hub = new THREE.Group(); hub.name = 'wheel'; hub.userData.r = 0.33; hub.position.set(x, 0.33, z);
     const sp = new THREE.Group(); const w = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.25, 14), black); w.rotation.z = Math.PI / 2; sp.add(w); hub.add(sp); g.add(hub);
   }
-  // the robot: torso, black face plate, arms on the handlebar
+  // the robot: the real Optimus standing on the deck when it loaded, else a sketch of one
+  const bot = prop('optimus', 1.73);
+  if (bot) { bot.position.set(0, 0.72, -0.55); g.add(bot); }
+  else {
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.6, 4, 12), white); torso.position.set(0, 1.55, -0.55); g.add(torso);
   const pelvis = box(0.5, 0.25, 0.3, 0, 1.0, -0.55, black);
   void pelvis;
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 12), white); head.scale.set(1, 1.15, 1.05); head.position.set(0, 2.28, -0.55); g.add(head);
   const face = new THREE.Mesh(new THREE.SphereGeometry(0.201, 16, 12, -0.9, 1.8, 0.6, 1.2), black); face.scale.copy(head.scale); face.position.copy(head.position); face.rotation.y = Math.PI; g.add(face);
   for (const x of [-0.42, 0.42]) { const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.6, 4, 8), white); arm.position.set(x, 1.5, -0.85); arm.rotation.x = 0.9; g.add(arm); }
+  }
   box(1.1, 0.06, 0.06, 0, 1.3, -1.15, grey);
   const tl = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.5, 0.15, 0.2), toneMapped: false }); tl.name = 'tail';
   for (const x of [-0.65, 0.65]) { const t = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.03), tl); t.position.set(x, 0.6, 1.31); g.add(t); }
@@ -270,7 +276,7 @@ function buildCity(k) {
   let n = 0; for (const side of [-1, 1]) for (let i = 0; i < 12; i++) for (let j = 0; j < 10; j++) { _p.set(side * (60 + j * 6), 1.4, 40 + i * 5); _q.setFromEuler(_e.set(-0.5, 0, 0)); panel.setMatrixAt(n++, _m.compose(_p, _q, _s.set(1, 1, 1))); }
   city.add(panel);
   // landed ships around the city
-  for (const [x, z] of [[-210, -150], [200, -170], [-120, -280], [130, -300]]) { const sh = makeShip({ tiles: true }); sh.position.set(x, 2, z); sh.rotation.y = r() * 6; city.add(sh); }
+  for (const [x, z] of [[-210, -150], [200, -170], [-120, -280], [130, -300]]) { const sh = k.prop('starship') || makeShip({ tiles: true }); sh.position.set(x, 2, z); sh.rotation.y = r() * 6; city.add(sh); }
   // the welcome sign
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(40, 7), new THREE.MeshBasicMaterial({ map: k.textTex('MARS CITY 1 · 화성 첫 도시', '#ffd28a', { w: 1024, h: 180, size: 84, bg: '#160904', frame: true }), toneMapped: false, side: THREE.DoubleSide }));
   sign.material.color.setScalar(1.5); sign.position.set(0, 14, 40); city.add(sign);

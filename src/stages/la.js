@@ -1,6 +1,7 @@
 // Stage 2: Los Angeles. The 405 at 3 pm: six lanes of parked traffic you drive across the roofs of,
 // a copycat BYD swarm, overpasses, palms, golden hills, and the HOLLYBYD sign moved onto an overpass.
 import * as THREE from 'three';
+import { prop } from '../props.js';
 
 const ROAD_HALF = 18;
 const FINISH_S = 3300;
@@ -64,6 +65,7 @@ export default {
     waymo: { car: 'ioniq5', kit: true, name: '웨이모', speed: [22, 26], brakes: true, n: 4 },
     robotaxi: { car: 'modely', name: '테슬라 로보택시', speed: [30, 34], color: '#f2f2f0', n: 3 },
     model3: { car: 'model3', name: '모델 3', speed: [26, 32], n: 4 },
+    semi: { make: () => { const m = prop('semi', 7.2); m.userData.kind = 'semi'; m.userData.cfg = { colors: ['#16171a'] }; return m; }, name: '세미 트럭', speed: [20, 24], n: 3 },
     cybertruck: { car: 'cybertruck', name: '사이버트럭', speed: [24, 29], n: 3 },
     dolphin: { car: 'dolphin', name: 'BYD 돌핀', speed: [28, 33], n: 3 },
     sealion: { car: 'sealion7', name: 'BYD 씰라이언', speed: [27, 32], n: 3 },
@@ -71,6 +73,7 @@ export default {
   },
   jamMix: { model3: 6, robotaxi: 3, sealion: 6, dolphin: 2, cybertruck: 3, waymo: 2, bus: 1 },
   boss: 'trailer',
+  props: ['carrier', 'semi'],
   radio: [
     [20, 'LA 405번 고속도로야. 세계에서 제일 긴 주차장이지.'],
     [190, '앞에 꽉 막혔어. 경사로 타고 지붕 위로 달려! 차 지붕은 원래 공짜 도로야.'],
