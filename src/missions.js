@@ -4,8 +4,11 @@
 // result() returns { pass, fail?, stars: [{ ok, text, gap }] x3 }; the first star not met is the next goal.
 import * as THREE from 'three';
 
-const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
-const timeStar = (run, T) => ({ ok: run.t <= T, text: `${fmt(T)} 이내`, gap: `${(run.t - T).toFixed(1)}초만 더 빠르면 ★` });
+// the world runs SLOW times slower than its own clock (user: it felt like 1.5x fast-forward, 2026-10-24).
+// Physics, limits and records stay in game seconds; anything shown to the player is in real seconds.
+export const SLOW = 1.5;
+const fmt = (t) => { t *= SLOW; return `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`; };
+const timeStar = (run, T) => ({ ok: run.t <= T, text: `${fmt(T)} 이내`, gap: `${((run.t - T) * SLOW).toFixed(1)}초만 더 빠르면 ★` });
 const perfectStar = (run, n) => ({ ok: run.perfect >= n, text: `퍼펙트 착지 ${n}번`, gap: `퍼펙트 착지 ${n - run.perfect}번만 더 (링이 금색일 때 점프 꾹)` });
 
 export function createMission(def = {}, ctx) {

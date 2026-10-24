@@ -10,7 +10,7 @@ import { createBoss } from './boss.js';
 import { loadProps, prop, propCredits, failed as loadFailed } from './props.js';
 import { loadHeads, portraits, headCredits } from './heads.js';
 import { STAGES, ORDER } from './stages/index.js';
-import { createMission } from './missions.js';
+import { createMission, SLOW } from './missions.js';
 import { loadCity, planRoute, project, cityBuildings, cityPolys } from './osm.js';
 
 // ---------- quality ----------
@@ -135,7 +135,7 @@ function stepBody(dt) {
 const UPGRADES = {
   magnet: { name: '자석', desc: (l) => `끌어당김 범위 ${magnetRange(l).toFixed(1)}m`, max: 8, cost: (l) => Math.round(60 * Math.pow(1.55, l)) },
   tank: { name: '압축공기 탱크', desc: (l) => `점프 최대 +${l}회`, max: 4, cost: (l) => Math.round(180 * Math.pow(1.9, l)) },
-  comp: { name: '컴프레서', desc: (l) => `점프 충전 ${recharge(l).toFixed(1)}초`, max: 5, cost: (l) => Math.round(90 * Math.pow(1.65, l)) },
+  comp: { name: '컴프레서', desc: (l) => `점프 충전 ${(recharge(l) * SLOW).toFixed(1)}초`, max: 5, cost: (l) => Math.round(90 * Math.pow(1.65, l)) },
   motor: { name: '듀얼 모터', desc: (l) => `최고속도 +${l * 4 * 3.6 | 0}km/h`, max: 6, cost: (l) => Math.round(110 * Math.pow(1.6, l)) },
   armor: { name: '배터리 팩 보강', desc: (l) => `최대 내구도 ${100 + l * 20}`, max: 5, cost: (l) => Math.round(150 * Math.pow(1.7, l)) },
   optimus: { name: '옵티머스 동승 정비', desc: (l) => (l ? `옵티머스가 옆자리에서 초당 ${(0.35 + 0.35 * l).toFixed(2)}씩 수리 · 초록 구간까지만` : '옵티머스가 옆자리에 타서 달리는 중에 고쳐 줘요 · 초록 구간까지만'), max: 3, cost: (l) => Math.round(400 * Math.pow(2, l)) },
@@ -1185,7 +1185,7 @@ function updateHUD() {
   hud.mLine.textContent = mh.line || ''; hud.mission.classList.toggle('warn', !!mh.warn);
   hud.prompt.hidden = !mh.big; if (mh.big) { hud.prompt.textContent = mh.line.replace(/^\d+\/\d+ · /, ''); hud.prompt.classList.toggle('flash', !!mh.flash); }
 }
-const fmtTime = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}`;
+const fmtTime = (t) => { t *= SLOW; return `${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}`; }; // game seconds in, real seconds shown
 
 // ---------- tricks, combo, score ----------
 // Every trick adds to a chain; the chain's multiplier (x1..x5) scales its points. A crash, a fall or a hard
@@ -1402,7 +1402,7 @@ function step(dt) {
   if (P.v > vmax) acc = -12;
   // launch: the cold-gas thrusters fire with the motors, 0-100 km/h (as the HUD shows it) in about 1.1 s
   if (P.launchT > 0) { P.launchT -= dt; acc = Math.max(acc, 23.5); }
-  if (!P.t100 && P.v * 3.6 * 1.1 >= 100) { P.t100 = raceT; if (raceT < 1.2) unlockAch('launch'); if (raceT < 2) floatText(`0→100km/h ${raceT.toFixed(2)}초 · 콜드가스 스러스터`); }
+  if (!P.t100 && P.v * 3.6 * 1.1 >= 100) { P.t100 = raceT; if (raceT < 1.2) unlockAch('launch'); if (raceT < 2) floatText(`0→100km/h ${(raceT * SLOW).toFixed(2)}초 · 콜드가스 스러스터`); }
   if (P.crashT > 0) { P.crashT -= dt; acc *= 0.3; }
   if (input.brake && P.grounded) acc = -42;
   P.v = Math.max(0, P.v + acc * dt);
@@ -1728,7 +1728,7 @@ function collect(p) {
 const ACH = [
   { id: 'perfect1', name: '사뿐히', desc: '첫 퍼펙트 착지' },
   { id: 'combo5', name: '콤보 장인', desc: '콤보 ×5' },
-  { id: 'launch', name: '제로백 1초', desc: '출발 0→100km/h 1.2초 안에' },
+  { id: 'launch', name: '로켓 스타트', desc: '출발 0→100km/h 1.8초 안에' },
   { id: 'clean', name: '무사고 운전', desc: '충돌·추락 없이 완주' },
   { id: 'detour', name: '경로 재탐색 장인', desc: '우회로로 돌아서도 통과' },
   { id: 'line3', name: '인코스의 신', desc: '한 판에 갈림길 정확한 진입 3번' },
@@ -2070,8 +2070,8 @@ function loop(now) {
     else if (Math.ceil(countdown + dt) !== n) blip(440, 440, 0.15, 'square', 0.08);
   }
   if (state === 'race' && !hud.count.hidden && raceT > 0.8) hud.count.hidden = true;
-  if (state === 'race' && !paused && !window.__game?.manual) { tickAcc += dt; while (tickAcc >= TICK) { step(TICK); tickAcc -= TICK; } }
-  else if (state === 'finish') { P.v = Math.max(0, P.v - 30 * dt); P.s += P.v * dt; P.thrusting = false; }
+  if (state === 'race' && !paused && !window.__game?.manual) { tickAcc += dt / SLOW; while (tickAcc >= TICK) { step(TICK); tickAcc -= TICK; } }
+  else if (state === 'finish') { P.v = Math.max(0, P.v - 30 * dt / SLOW); P.s += P.v * dt / SLOW; P.thrusting = false; }
   if (state !== 'loading') { placeCar(); syncTraffic(time); syncPickups(time); boss?.sync(time); }
   if (state === 'poster') posterStage(time);
   ST.tick?.(time, camera, { state, P, car });
