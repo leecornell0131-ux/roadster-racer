@@ -6,15 +6,68 @@ import { loadGltfJson } from './realcars.js';
 import { failed } from './props.js';
 
 export const HEADS = {
-  elon: { file: 'h_elon', yaw: 0, credit: 'Elon Musk face 3d — riccardogiorato' },
+  elon: { file: 'h_elon', yaw: 0, cari: { amp: 0.3, top: 0.25 }, credit: 'Elon Musk face 3d — riccardogiorato' },
   trump: { file: 'h_trump', yaw: 0, credit: 'Donald Trump Head — Freegives' },
   zuck: { file: 'h_zuck', yaw: 0, crop: { y: [0.3, 1] }, credit: 'Mark Zuckerberg — EntropyNine' },
   // bought on Fab (Standard licence, not CC): kept out of the public repo, see .gitignore
-  altman: { file: 'h_altman', yaw: 0, rotX: Math.PI / 2, keep: /AvatarHead|Eyeball|Cornea|Eyelash|Teeth/i, credit: 'Sam Altman — Daniel Pikl', licence: 'Fab Standard' },
+  altman: { file: 'h_altman', yaw: 0, rotX: Math.PI / 2, crop: { z: [0, 0.72] }, keep: /AvatarHead|Eyeball|Cornea|Eyelash|Teeth/i, credit: 'Sam Altman — Daniel Pikl', licence: 'Fab Standard' },
   bezos: { file: 'h_bezos', yaw: 0, crop: { y: [0.28, 1] }, credit: 'Jeff Bezos — EntropyNine' },
   biden: { file: 'h_biden', yaw: 0, keep: /AvatarHead|Hair|Brow/i, credit: 'JOE BIDEN — M.H6LL ENTERAR/VR' },
   obama: { file: 'h_obama', yaw: -Math.PI / 2 + 0.35, dropDark: 0.07, tint: '#e0a682', credit: 'BARACK OBAMA — LOUIS' },
 };
+
+// release builds draw every real person as a caricature (publicity rights, App Store 1.1.2): ?cari to preview.
+// The test build keeps the scanned faces.
+export const CARICATURE = typeof location !== 'undefined' && (new URLSearchParams(location.search).has('cari') || !!globalThis.RELEASE_BUILD);
+
+// bobble-head caricature, done on load so every head (and every future one) gets it: a bigger cranium,
+// a smaller jaw, features pushed further out of the head's overall egg shape, and a painted, posterised skin
+function caricature(g, inner, o) {
+  const amp = o.amp ?? 0.55, top = o.top ?? 0.45, nose = o.nose ?? 0.3;
+  g.updateMatrixWorld(true);
+  const hs = g.userData.size.clone().multiplyScalar(0.5), meshes = [];
+  inner.traverse((m) => { if (m.isMesh) meshes.push(m); });
+  const v = new THREE.Vector3(), q = new THREE.Vector3();
+  for (const m of meshes) {
+    const geo = m.geometry.clone(); geo.applyMatrix4(m.matrixWorld);
+    const pos = geo.getAttribute('position');
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i);
+      q.set(v.x / hs.x, v.y / hs.y, v.z / hs.z);
+      const d = q.length() || 1;
+      v.multiplyScalar(1 + amp * (d - 1)); // what sticks out sticks out more, what's set in sinks deeper
+      const f = 1 - top / 2 + top * (v.y / (2 * hs.y) + 0.5); // narrow jaw, wide cranium
+      v.x *= f; v.z *= 0.92 + 0.08 * f;
+      const mid = Math.max(0, 1 - Math.abs(v.x) / (0.14 * 2 * hs.x)) * Math.max(0, 1 - Math.abs(v.y + 0.02) / 0.16);
+      if (v.z > 0) v.z *= 1 + nose * mid * mid; // the nose
+      pos.setXYZ(i, v.x, v.y, v.z);
+    }
+    pos.needsUpdate = true; geo.computeBoundingBox();
+    m.geometry = geo; m.material = paint(m.material, o);
+    m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.scale.set(1, 1, 1); m.updateMatrix();
+    g.add(m);
+  }
+  g.remove(inner);
+  const box = new THREE.Box3().setFromObject(g), size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+  const k = 1 / size.y; for (const m of meshes) { m.geometry.translate(-c.x, -c.y, -c.z); m.geometry.scale(k, k, k); }
+  g.userData.size = size.multiplyScalar(k);
+}
+const painted = new Map();
+function paint(mat, o) {
+  const img = mat.map?.image; if (!img) return mat;
+  if (!painted.has(mat.map)) {
+    const w = Math.min(o.px ?? 320, img.width || 512), h = Math.min(o.px ?? 320, img.height || 512); // a soft, low-res repaint (a blur would bleed the atlas background into the seams)
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const cx = cv.getContext('2d');
+    cx.filter = `blur(${o.blur ?? 0}px) saturate(${o.sat ?? 1.35}) contrast(1.12)`; cx.drawImage(img, 0, 0, w, h); cx.filter = 'none';
+    const id = cx.getImageData(0, 0, w, h), px = id.data, L = o.levels ?? 11;
+    for (let i = 0; i < px.length; i += 4) for (let j = 0; j < 3; j++) px[i + j] = Math.round(Math.round(px[i + j] / 255 * L) / L * 255 * 0.7 + px[i + j] * 0.3);
+    cx.putImageData(id, 0, 0);
+    const t = new THREE.CanvasTexture(cv); t.flipY = mat.map.flipY; t.colorSpace = mat.map.colorSpace; t.wrapS = mat.map.wrapS; t.wrapT = mat.map.wrapT;
+    painted.set(mat.map, t);
+  }
+  const m = mat.clone(); m.map = painted.get(mat.map); m.normalMap = null; m.roughness = 0.75; m.metalness = 0;
+  return m;
+}
 
 const cache = new Map();
 const GET = ['getX', 'getY', 'getZ', 'getW'];
@@ -94,6 +147,7 @@ function normalise(name, gltf) {
   const k = 1 / size.y; inner.scale.setScalar(k); inner.position.copy(c).multiplyScalar(-k);
   const g = new THREE.Group(); g.add(inner);
   g.userData = { head: name, size: size.multiplyScalar(k) };
+  if (CARICATURE) caricature(g, inner, cfg.cari || {});
   return g;
 }
 
