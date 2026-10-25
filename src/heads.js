@@ -9,8 +9,8 @@ export const HEADS = {
   elon: { file: 'h_elon', yaw: 0, credit: 'Elon Musk face 3d — riccardogiorato' },
   trump: { file: 'h_trump', yaw: 0, credit: 'Donald Trump Head — Freegives' },
   zuck: { file: 'h_zuck', yaw: 0, crop: { y: [0.3, 1] }, credit: 'Mark Zuckerberg — EntropyNine' },
-  // no free Altman model exists: a generic short-haired head stands in for the parody 올트-맨
-  altman: { file: 'h_altman', yaw: 0, crop: { y: [0.2, 1] }, credit: 'Young Adult/Middle Aged Male - Head — Ethan Cox' },
+  // bought on Fab (Standard licence, not CC): kept out of the public repo, see .gitignore
+  altman: { file: 'h_altman', yaw: 0, rotX: Math.PI / 2, keep: /AvatarHead|Eyeball|Cornea|Eyelash|Teeth/i, credit: 'Sam Altman — Daniel Pikl', licence: 'Fab Standard' },
   bezos: { file: 'h_bezos', yaw: 0, crop: { y: [0.28, 1] }, credit: 'Jeff Bezos — EntropyNine' },
   biden: { file: 'h_biden', yaw: 0, keep: /AvatarHead|Hair|Brow/i, credit: 'JOE BIDEN — M.H6LL ENTERAR/VR' },
   obama: { file: 'h_obama', yaw: -Math.PI / 2 + 0.35, dropDark: 0.07, tint: '#e0a682', credit: 'BARACK OBAMA — LOUIS' },
@@ -89,7 +89,7 @@ function normalise(name, gltf) {
     if (cfg.tint) { m = mat.clone(); m.color.set(cfg.tint); }
     const mesh = new THREE.Mesh(g, m); mesh.castShadow = true; inner.add(mesh);
   }
-  inner.rotation.y = cfg.yaw; inner.updateMatrixWorld(true);
+  inner.rotation.set(cfg.rotX || 0, cfg.yaw, 0); inner.updateMatrixWorld(true); // rotX: Z-up exports
   const box = new THREE.Box3().setFromObject(inner), size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
   const k = 1 / size.y; inner.scale.setScalar(k); inner.position.copy(c).multiplyScalar(-k);
   const g = new THREE.Group(); g.add(inner);
@@ -128,4 +128,4 @@ export function portraits(names, px = 128) {
   return out;
 }
 
-export const headCredits = (names) => names.filter((n) => heads[n]).map((n) => HEADS[n].credit + ' (CC BY 4.0)');
+export const headCredits = (names) => names.filter((n) => heads[n]).map((n) => HEADS[n].credit + ` (${HEADS[n].licence || 'CC BY 4.0'})`);

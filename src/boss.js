@@ -533,7 +533,7 @@ export function buildOverlord() {
     const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 0.7, 4), toneMapped: false });
     const iris = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.75, 40), eyeMat); iris.position.z = 1.93; h.add(iris);
     const eye = new THREE.Object3D(); eye.position.z = 2; h.add(eye);
-    const alt = head('altman', 3.2); if (alt) { alt.position.set(0, 3.2, 0.1); h.add(alt); }
+    const alt = head('altman', 4); if (alt) { alt.position.set(0, 3.6, 0.1); h.add(alt); }
     heads.push({ h, eye, eyeMat, col: new THREE.Color(0.35, 0.17, 1), name: '올트-맨', label: '조종권: 올트-맨 · 청구서 폭격' });
   }
   // 1: Lizard Zuck's headset (a reptile eye on the display)
@@ -545,7 +545,7 @@ export function buildOverlord() {
     const screen = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 1.7), eyeMat); screen.position.z = 1.31; h.add(screen);
     const slit = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 1.4), new THREE.MeshBasicMaterial({ color: '#050805' })); slit.position.z = 1.32; h.add(slit);
     const eye = new THREE.Object3D(); eye.position.z = 1.5; h.add(eye);
-    const zk = head('zuck', 3.4); if (zk) { zk.position.set(0, 2.9, -0.2); h.add(zk); }
+    const zk = head('zuck', 4.2); if (zk) { zk.position.set(0, 3.3, -0.2); h.add(zk); }
     heads.push({ h, eye, eyeMat, col: new THREE.Color(0.25, 1, 0.3), name: '리자드 저크', label: '조종권: 리자드 저크 · 선크림 살포' });
   }
   // 2: Amo-Day's safety shield head
