@@ -8,7 +8,9 @@ import { failed } from './props.js';
 export const HEADS = {
   elon: { file: 'h_elon', yaw: 0, credit: 'Elon Musk face 3d — riccardogiorato' },
   trump: { file: 'h_trump', yaw: 0, credit: 'Donald Trump Head — Freegives' },
-  zuck: { file: 'h_zuck', yaw: 0, keep: /Head|hair/i, crop: { y: [0.22, 1] }, hair: [/hair/i, 0.8, 0.92, 0.6], credit: 'Mark Zuckerberg Low Poly — Vadim Fedenko' },
+  zuck: { file: 'h_zuck', yaw: 0, crop: { y: [0.3, 1] }, credit: 'Mark Zuckerberg — EntropyNine' },
+  // no free Altman model exists: a generic short-haired head stands in for the parody 올트-맨
+  altman: { file: 'h_altman', yaw: 0, crop: { y: [0.2, 1] }, credit: 'Young Adult/Middle Aged Male - Head — Ethan Cox' },
   bezos: { file: 'h_bezos', yaw: 0, crop: { y: [0.28, 1] }, credit: 'Jeff Bezos — EntropyNine' },
   biden: { file: 'h_biden', yaw: 0, keep: /AvatarHead|Hair|Brow/i, credit: 'JOE BIDEN — M.H6LL ENTERAR/VR' },
   obama: { file: 'h_obama', yaw: -Math.PI / 2 + 0.35, dropDark: 0.07, tint: '#e0a682', credit: 'BARACK OBAMA — LOUIS' },

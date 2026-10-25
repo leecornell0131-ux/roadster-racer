@@ -163,8 +163,17 @@ export function buildOrb() {
   const holoMat = new THREE.MeshBasicMaterial({ map: holoTex([['AGI 다음 달 출시!', 150], ['진짜임 · 구독 $200/월', 72]]), transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
   holoMat.color.setScalar(1.6);
   const holo = new THREE.Mesh(new THREE.PlaneGeometry(10, 2.5), holoMat); holo.position.set(0, R + 2.4, 0); g.add(holo);
+  // the pilot: Alt-Man's head in a glass bubble on top, watching the chasing car
+  const alt = head('altman', 2.6);
+  if (alt) {
+    alt.position.set(0, R + 0.95, 0.2); g.add(alt);
+    const bubble = new THREE.Mesh(new THREE.SphereGeometry(1.75, 40, 24, 0, Math.PI * 2, 0, Math.PI * 0.62), new THREE.MeshPhysicalMaterial({ color: '#cfe0ff', metalness: 0, roughness: 0.02, transmission: 0.95, thickness: 0.1, transparent: true, opacity: 0.28, clearcoat: 1, depthWrite: false }));
+    bubble.position.set(0, R - 0.25, 0.2); g.add(bubble);
+    holo.position.y = R + 4.6;
+  }
+  const pilot = alt;
   const size = new THREE.Vector3(R * 2, R * 2, R * 2);
-  g.userData = { size, pivots: [], jets: [halo, halo2], eyeMat, eye, holo, holoMat, ring, scan, eyeCol: new THREE.Color(0.35, 0.17, 1), firedTex: holoTex([['해임됨', 170], ['이사회 결정 · 5초 후 복귀?', 70]], '#ff4a6a') };
+  g.userData = { size, pivots: [], jets: [halo, halo2], eyeMat, eye, holo, holoMat, ring, scan, eyeCol: new THREE.Color(0.35, 0.17, 1), pilot, firedTex: holoTex([['해임됨', 170], ['이사회 결정 · 5초 후 복귀?', 70]], '#ff4a6a') };
   return g;
 }
 
@@ -233,7 +242,8 @@ export function buildHeadset() {
   // the headset sits pushed up on his forehead so the real face shows under it; the tongue comes from his mouth
   let mouth = new THREE.Vector3(0, -1.4, 2.2), skins = [];
   if (zuck) {
-    zuck.position.set(0, -3.5, -3.4); g.add(zuck); mouth = new THREE.Vector3(0, -3.5 - 8 * 0.27, 0.4); halo.position.y = -3.5 - 8 * 0.5 - 0.5;
+    const zy = -2.3; // the bust model's face sits low in its box: lift it so the visor rests on the forehead
+    zuck.position.set(0, zy, -3.4); g.add(zuck); mouth = new THREE.Vector3(0, zy - 8 * 0.27, 0.4); halo.position.y = zy - 8 * 0.5 - 0.5;
     zuck.traverse((o) => { if (o.isMesh && !/hair/i.test(o.material.name || '')) { o.material = o.material.clone(); skins.push({ m: o.material, c: o.material.color.clone() }); } });
   }
   const size = new THREE.Vector3(W, H, D);
@@ -523,6 +533,7 @@ export function buildOverlord() {
     const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 0.7, 4), toneMapped: false });
     const iris = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.75, 40), eyeMat); iris.position.z = 1.93; h.add(iris);
     const eye = new THREE.Object3D(); eye.position.z = 2; h.add(eye);
+    const alt = head('altman', 3.2); if (alt) { alt.position.set(0, 3.2, 0.1); h.add(alt); }
     heads.push({ h, eye, eyeMat, col: new THREE.Color(0.35, 0.17, 1), name: '올트-맨', label: '조종권: 올트-맨 · 청구서 폭격' });
   }
   // 1: Lizard Zuck's headset (a reptile eye on the display)
@@ -534,6 +545,7 @@ export function buildOverlord() {
     const screen = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 1.7), eyeMat); screen.position.z = 1.31; h.add(screen);
     const slit = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 1.4), new THREE.MeshBasicMaterial({ color: '#050805' })); slit.position.z = 1.32; h.add(slit);
     const eye = new THREE.Object3D(); eye.position.z = 1.5; h.add(eye);
+    const zk = head('zuck', 3.4); if (zk) { zk.position.set(0, 2.9, -0.2); h.add(zk); }
     heads.push({ h, eye, eyeMat, col: new THREE.Color(0.25, 1, 0.3), name: '리자드 저크', label: '조종권: 리자드 저크 · 선크림 살포' });
   }
   // 2: Amo-Day's safety shield head
@@ -566,7 +578,7 @@ function parcelTex(label = '당일배송') {
 }
 
 // boss entrance dialogue: [speaker, line]; 'boss' is the boss itself, 'hero' is 일론, or { name, face, ava }
-const ALT = { name: '샘 올트-맨', ava: 'SA' }, ZUCK = { name: '리자드 저크', face: 'zuck', ava: 'MZ' }, AMO = { name: '다리오 아모-데이', ava: 'DA' };
+const ALT = { name: '샘 올트-맨', face: 'altman', ava: 'SA' }, ZUCK = { name: '리자드 저크', face: 'zuck', ava: 'MZ' }, AMO = { name: '다리오 아모-데이', ava: 'DA' };
 export const CUTS = {
   waymo: [
     ['boss', '삐빅. 전방에 미확인 테슬라 감지. 라이다 47개로 분석 결과… 운전자가 핸들을 안 잡고 있음.'],
@@ -620,7 +632,7 @@ export const BOSSES = {
     },
   },
   orb: {
-    name: '올트-맨의 AGI 오브', sub: '클로즈드AI · 홍채 스캔하면 AGI 다음 달에 드림', hp: 100, appearAt: 900, giveUpAt: 2960, hover: 7, orb: true,
+    face: 'altman', name: '올트-맨의 AGI 오브', sub: '클로즈드AI · 홍채 스캔하면 AGI 다음 달에 드림', hp: 100, appearAt: 900, giveUpAt: 2960, hover: 7, orb: true,
     xp: 380, doge: 200, need: [],
     lines: {
       intro: '올트-맨의 AGI 오브다! 구독료 청구서를 날려. 빨간 차선은 청구서 날아오는 자리야!',
@@ -953,6 +965,7 @@ export function createBoss(ctx, key, protos, opts) {
       const side = new THREE.Vector3(fr.f.z, 0, -fr.f.x);
       cv.copy(bossW).addScaledVector(fr.f, -Math.cos(a) * r).addScaledVector(side, Math.sin(a) * r);
       cv.y = Math.max(ctx.car.position.y + 1.2, bossW.y - big * 0.25);
+      if (mesh.userData.pilot) { mesh.userData.pilot.getWorldPosition(cl); bossW.lerp(cl, 0.5); }
       cl.copy(bossW); cl.y -= big * 0.12; // frame it a little high, clear of the subtitle
     }
     camera.position.copy(cv);

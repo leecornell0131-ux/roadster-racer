@@ -45,7 +45,7 @@ Source files: tools/pack-model.mjs from the Sketchfab downloads; sizing and faci
 |---|---|---|
 | Elon Musk face 3d | riccardogiorato | radio portrait |
 | Donald Trump Head | Freegives | DC ally radio portrait |
-| Mark Zuckerberg Low Poly | Vadim Fedenko | Metaverse boss (wears the headset), boss bar |
+| Mark Zuckerberg | EntropyNine | Metaverse boss (wears the headset), AGI Overlord, boss bar |
 | Jeff Bezos | EntropyNine | Moon boss passenger, boss bar |
 | JOE BIDEN | M.H6LL ENTERAR/VR | DC truck bobblehead, boss bar |
 | BARACK OBAMA | LOUIS | DC 747 drone rider (black scan backdrop removed) |
