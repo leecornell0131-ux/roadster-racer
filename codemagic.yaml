@@ -21,6 +21,9 @@ workflows:
     scripts:
       - name: 게임 파일 앱에 넣기
         script: |
+          # 유료 모델(올트-맨 머리)은 비공개 저장소 roadster-racer-licensed에서 (없으면 그 머리만 빠짐)
+          git submodule update --init licensed || echo "licensed/ 를 못 받음: 유료 모델 없이 빌드"
+          ls licensed || true
           npm ci
           node tools/build-ios-web.mjs
       - name: Xcode 프로젝트 만들기

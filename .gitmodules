@@ -1,0 +1,3 @@
+[submodule "licensed"]
+	path = licensed
+	url = https://github.com/leecornell0131-ux/roadster-racer-licensed.git
