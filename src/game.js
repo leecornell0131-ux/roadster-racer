@@ -5,7 +5,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { makeRoadster, makeWaymo, makeCybercab, makeRTX5090, makeH100, makeBlackwell } from './models.js';
-import { upgradeRoadster, loadCar, instance, addSensorKit, fleet, CARS } from './realcars.js';
+import { upgradeRoadster, loadCar, instance, addSensorKit, fleet, CARS, ROADSTER_CREDIT } from './realcars.js';
 import { createBoss } from './boss.js';
 import { loadProps, prop, propCredits, failed as loadFailed } from './props.js';
 import { loadHeads, portraits, headCredits } from './heads.js';
@@ -2147,7 +2147,7 @@ async function boot() {
       addPuddle: (q) => PUDDLES.push(q), removePuddle: (q) => { const i = PUDDLES.indexOf(q); if (i >= 0) PUDDLES.splice(i, 1); },
       addDoge: (n) => { n = Math.max(n, -save.doge); save.doge += n; stats.dogeGain += n; writeSaveSoon(); } }, ST.boss, trafficProtos, ST.bossOpts);
   } catch (e) { console.warn('boss skipped', e); boss = null; }
-  $('credits').textContent = '3D models (Sketchfab): Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0) · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · ' + [...propCredits(ST.props || []), ...headCredits(HEAD_LIST)].map((c) => c + ' · ').join('') + 'Textures & HDRI: Poly Haven, ambientCG (CC0) · Earth & stars: NASA Blue Marble, Black Marble, SVS Deep Star Maps' + (CITY ? ' · Map data © OpenStreetMap contributors (ODbL)' : '') + (loadFailed.length ? ' · ⚠ ' + loadFailed.join(' / ') : '');
+  $('credits').textContent = '3D models: ' + ROADSTER_CREDIT + ' · ' + Object.values(CARS).map((c) => c.credit).join(' · ') + ' · ' + [...propCredits(ST.props || []), ...headCredits(HEAD_LIST)].map((c) => c + ' · ').join('') + 'Textures & HDRI: Poly Haven, ambientCG (CC0) · Earth & stars: NASA Blue Marble, Black Marble, SVS Deep Star Maps' + (CITY ? ' · Map data © OpenStreetMap contributors (ODbL)' : '') + (loadFailed.length ? ' · ⚠ ' + loadFailed.join(' / ') : '');
   resetRace(); placeCar(); syncTraffic(0); syncPickups(0);
   state = 'poster';
   $('startBtn').disabled = false; $('startBtn').textContent = '출발';

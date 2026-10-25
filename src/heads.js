@@ -18,7 +18,7 @@ export const HEADS = {
 
 // release builds draw every real person as a caricature (publicity rights, App Store 1.1.2): ?cari to preview.
 // The test build keeps the scanned faces.
-export const CARICATURE = typeof location !== 'undefined' && (new URLSearchParams(location.search).has('cari') || !!globalThis.RELEASE_BUILD);
+export const CARICATURE = typeof location !== 'undefined' && ((new URLSearchParams(location.search).has('cari') || new URLSearchParams(location.search).has('release')) || !!globalThis.RELEASE_BUILD);
 
 // bobble-head caricature, done on load so every head (and every future one) gets it: a bigger cranium,
 // a smaller jaw, features pushed further out of the head's overall egg shape, and a painted, posterised skin

@@ -55,3 +55,14 @@ Real likenesses appear under parody names; check store rules on real people befo
 ## Map data
 
 City maps (`assets/osm/*.json`, baked by `tools/osm-extract.mjs`) use data © OpenStreetMap contributors, available under the Open Database License (ODbL 1.0): https://www.openstreetmap.org/copyright. The in-game credits must show "© OpenStreetMap contributors" wherever a city map is used.
+
+## Release build replacements (assets/cars/release/, used with ?release or RELEASE_BUILD)
+
+The NC-licensed cars above are swapped for these in release builds. Details: assets/cars/release/replacements.json.
+
+| Replaces | Model | Author | Licence |
+|---|---|---|---|
+| Tesla Roadster 2.0 | Car Concept (modified) | Eric Chadwick / DGG, based on Unity Fan's public-domain concept | CC BY 4.0 |
+| Model Y | Generic Crossover | Innerscene | CC0 1.0 |
+| BYD Dolphin | Generic Electric Hatchback | Innerscene | CC0 1.0 |
+| BYD Sealion 7 | Generic Coupe Crossover (lowered roof) | Innerscene | CC0 1.0 |
