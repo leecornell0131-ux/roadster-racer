@@ -74,7 +74,25 @@ function quadrants(g) {
 }
 
 // ZTOONE3D "Tesla Roadster 2.0" (Sketchfab, CC BY-NC 4.0). Faces +z in the file; the game drives toward -z.
+// Release builds (?release, or globalThis.RELEASE_BUILD) swap the non-commercial (NC) models for commercial-use
+// stand-ins in assets/cars/release/ (CC0 / CC BY, see replacements.json). The test build keeps the nicer NC cars.
+export const RELEASE = typeof location !== 'undefined' && (new URLSearchParams(location.search).has('release') || !!globalThis.RELEASE_BUILD);
+const RELEASE_ROADSTER = { url: 'assets/cars/release/roadster.json', yaw: 0, len: 4.4, paint: /^Paint [12]/, glass: /^Glass$/, head: /^Headlight$/,
+  tail: /^Brakelight$|^Signallight$/, wheel: /^wheel_|^Tire|^Disc$|^Brake$/, stockWheels: true, colors: ['#b0081c'] };
+export const ROADSTER_CREDIT = RELEASE ? 'Concept Roadster — Eric Chadwick / DGG (CC BY 4.0; modified)' : 'Tesla Roadster 2.0 — ZTOONE3D (CC BY-NC 4.0)';
+async function upgradeReleaseRoadster(car, color) {
+  const real = await loadCar('roadster', false, { ...RELEASE_ROADSTER, colors: [color] });
+  for (const child of [...car.children]) if (child.name !== 'blob' && child.material !== car.userData.jet) car.remove(child);
+  car.add(real);
+  car.userData.wheels = real.children.filter((c) => c.name === 'wheel');
+  // its AO map reads a second UV set the merged pieces don't keep
+  real.traverse((o) => { if (o.material?.aoMap && !o.geometry.attributes.uv1) { o.material = o.material.clone(); o.material.aoMap = null; } });
+  real.traverse((o) => { if (o.material?.name === 'paint') car.userData.paint = o.material; if (o.material?.name === 'tail') car.userData.tail = o.material; });
+  car.userData.real = true;
+  return car;
+}
 export async function upgradeRoadster(car, url = 'assets/cars/roadster.json', color = '#b0081c') {
+  if (RELEASE) return upgradeReleaseRoadster(car, color);
   const gltf = await loadGltfJson(url);
   const root = gltf.scene;
   const holder = new THREE.Group(); holder.add(root); holder.rotation.y = Math.PI;
@@ -177,6 +195,15 @@ export const CARS = {
   torino: { url: 'assets/cars/torino.json', yaw: 0, len: 13.2, paint: /^prefen$/, glass: /^vidro$/, head: /luz_high|farois_NONE/, tail: /Materiais\.005/, wheel: /^tires$|^wheel$/,
     colors: ['#e2d21a', '#f2f2f0', '#2a7f8f'], credit: 'Torino BYD bus — lael.eugenio (CC BY 4.0)' },
 };
+// commercial-use replacements for the NC entries above (release builds only)
+if (RELEASE) Object.assign(CARS, {
+  modely: { url: 'assets/cars/release/modely.json', yaw: 0, len: 4.79, paint: /^paint$/, glass: /^glass/, head: /^clearlens$/, tail: /^redlens$/, wheel: /^wheel_/,
+    colors: ['#f2f2f0', '#111214', '#8a8f96', '#1d3f8f', '#9b0d14'], credit: 'Generic Crossover — Innerscene (CC0)' },
+  dolphin: { url: 'assets/cars/release/dolphin.json', yaw: 0, len: 4.29, paint: /^paint$/, glass: /^glass/, head: /^clearlens$/, tail: /^redlens$/, wheel: /^wheel_/,
+    colors: ['#2a7f8f', '#d9dde0', '#e8b6c4', '#3c4b5a', '#f0ecdf'], credit: 'Generic Electric Hatchback — Innerscene (CC0)' },
+  sealion7: { url: 'assets/cars/release/sealion7.json', yaw: 0, len: 4.83, paint: /^paint$/, glass: /^glass/, head: /^clearlens$/, tail: /^redlens$/, wheel: /^wheel_/,
+    colors: ['#1c3d6e', '#e9ebec', '#2a2c30', '#6d7f8c'], credit: 'Generic Coupe Crossover — Innerscene (CC0; modified)' },
+});
 
 const FLAT = ['position', 'normal', 'uv'];
 function unify(g) { // same attribute set on every piece so they merge
@@ -188,8 +215,8 @@ function unify(g) { // same attribute set on every piece so they merge
 
 // returns a prototype car: static parts merged per material, wheels on spin pivots
 // lod: the heavily simplified copy in assets/cars/lod/ (for parked crowds)
-export async function loadCar(kind, lod = false) {
-  const cfg = CARS[kind];
+export async function loadCar(kind, lod = false, override = null) {
+  const cfg = override || CARS[kind];
   const gltf = await loadGltfJson(lod ? cfg.url.replace('cars/', 'cars/lod/') : cfg.url);
   const holder = new THREE.Group(); holder.add(gltf.scene); holder.rotation.y = cfg.yaw;
   holder.updateMatrixWorld(true);

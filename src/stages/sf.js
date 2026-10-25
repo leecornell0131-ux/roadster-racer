@@ -110,6 +110,7 @@ export default {
     cablecar: { make: makeCableCar, name: '케이블카', speed: [8, 10], n: 3, lanes: [-3, 3], range: [160, 1150], color: '#8b1e1c' },
   },
   boss: 'orb',
+  heads: ['altman'],
   props: ['airship'],
   radio: [
     [20, '샌프란시스코야. 언덕이 미쳤어. 꼭대기 교차로는 평평해서, 속도 그대로 넘으면 붕 떠.'],

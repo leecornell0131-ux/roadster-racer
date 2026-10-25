@@ -99,6 +99,7 @@ export default {
     optimus: { make: makeOptimusCart, name: '옵티머스 배달 카트', speed: [15, 19], n: 4, color: '#eeeeee' },
   },
   boss: 'agi',
+  heads: ['altman', 'zuck'],
   props: ['optimus', 'starship'],
   radio: [
     [20, '화성이다! 마지막 스테이지. 먼지폭풍 오면 시야가 확 줄어.'],

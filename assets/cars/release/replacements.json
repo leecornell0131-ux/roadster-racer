@@ -1,0 +1,30 @@
+{
+  "roadster": {
+    "name": "Car Concept",
+    "author": "Eric Chadwick, Darmstadt Graphics Group; based on Unity Fan's public-domain concept",
+    "license": "CC-BY-4.0",
+    "source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept",
+    "changes": "Logos, license plate, interiors and engine removed; materials simplified; mesh reduced and recompressed."
+  },
+  "modely": {
+    "name": "Charcoal five-door crossover SUV",
+    "author": "Innerscene",
+    "license": "CC0-1.0",
+    "source": "https://www.innerscene.com/tools/library/3d-parts/charcoal-five-door-crossover-suv-a1996830",
+    "changes": "Interior, number plates and exhaust removed; wheel materials separated; mesh reduced and recompressed."
+  },
+  "dolphin": {
+    "name": "Generic electric hatchback",
+    "author": "Innerscene",
+    "license": "CC0-1.0",
+    "source": "https://www.innerscene.com/tools/library/3d-parts/generic-electric-hatchback-6f7e33fa",
+    "changes": "Interior and number plates removed; wheel materials separated; mesh reduced and recompressed."
+  },
+  "sealion7": {
+    "name": "Sage five-door crossover SUV, lowered roof variant",
+    "author": "Innerscene",
+    "license": "CC0-1.0",
+    "source": "https://www.innerscene.com/tools/library/3d-parts/sage-five-door-crossover-suv-1db314ad",
+    "changes": "Roof lowered; interior, number plates and exhaust removed; wheel materials separated; mesh reduced and recompressed."
+  }
+}
