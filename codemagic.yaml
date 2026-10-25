@@ -1,0 +1,46 @@
+# 로드스터 레이서 아이폰 앱을 Codemagic(Mac 클라우드, 개인 무료 구간)에서 빌드해 TestFlight에 올림.
+# 육아앱(babylog)과 같은 Codemagic 계정·API 키(babylog)·배포 인증서(babylog-dist)를 같이 씀.
+# Mac이 없어서 Xcode 프로젝트는 빌드할 때 ios-app/project.yml로 만듦(XcodeGen).
+# 게임 파일은 앱 안에 들어가므로, 새 맵을 아이폰에서 하려면 다시 빌드해야 함.
+# 무료 시간(월 500분)을 아끼려고 자동 빌드는 없음. 새 버전을 올릴 때 손으로 "Start new build".
+# (changeset 조건을 걸면 손으로 누른 빌드도 "바뀐 파일 없음"으로 건너뛰어서 뺐음)
+workflows:
+  ios-testflight:
+    name: 아이폰 TestFlight
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    integrations:
+      # Codemagic 팀 설정 > Integrations > Developer Portal에 육아앱 때 연결한 API 키 이름
+      app_store_connect: babylog
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: kr.roadsterracer.app
+      xcode: latest
+      node: 22
+    scripts:
+      - name: 게임 파일 앱에 넣기
+        script: |
+          # 유료 모델(올트-맨 머리)은 비공개 저장소 roadster-racer-licensed에서 (없으면 그 머리만 빠짐)
+          git submodule update --init licensed || echo "licensed/ 를 못 받음: 유료 모델 없이 빌드"
+          ls licensed || true
+          npm ci
+          node tools/build-ios-web.mjs
+      - name: Xcode 프로젝트 만들기
+        script: |
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          cd ios-app && xcodegen generate
+      - name: 서명 파일 적용
+        script: xcode-project use-profiles --project ios-app/RoadsterRacer.xcodeproj
+      - name: 빌드 번호 올리기
+        script: cd ios-app && agvtool new-version -all "$BUILD_NUMBER"
+      - name: 앱 파일(ipa) 만들기
+        script: xcode-project build-ipa --project ios-app/RoadsterRacer.xcodeproj --scheme RoadsterRacer
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        # 내부 테스트(본인 Apple ID)는 Apple 심사 없이 올라가자마자 받을 수 있음
+        submit_to_testflight: false

@@ -1,0 +1,5 @@
+RoadsterRacer.xcodeproj/
+build/
+DerivedData/
+# 빌드할 때 tools/build-ios-web.mjs가 게임 파일을 복사해 만듦
+web/
